@@ -1,0 +1,19 @@
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Env / secrets
+.env
+.env.*
+*.local
+
+# Deps / build
+node_modules/
+dist/
+build/
+__pycache__/
+*.pyc
+.venv/
+venv/

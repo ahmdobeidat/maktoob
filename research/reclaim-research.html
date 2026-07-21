@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Reclaim Hackathon — Research &amp; Strategy</title>
+<style>
+  @page {
+    size: A4;
+    margin: 20mm 16mm 18mm 16mm;
+  }
+  @page :first {
+    margin: 0;
+  }
+  :root {
+    --bg: #0b0d10;
+    --panel: #12161b;
+    --panel-border: #232a31;
+    --text: #dfe6ec;
+    --text-dim: #8b98a5;
+    --accent: #59f2c4;
+    --accent-2: #7aa2ff;
+    --warn: #ff8a5c;
+    --mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+    --sans: "Inter", "Helvetica Neue", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: var(--sans);
+    color: #1c232b;
+    font-size: 10.6pt;
+    line-height: 1.55;
+    margin: 0;
+    background: #fff;
+  }
+  .page {
+    page-break-after: always;
+  }
+  .page:last-child { page-break-after: auto; }
+
+  /* ---------- Cover ---------- */
+  .cover {
+    width: 210mm;
+    height: 297mm;
+    box-sizing: border-box;
+    background: radial-gradient(circle at 20% 15%, #16303a 0%, #0b0d10 55%), var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 22mm 16mm;
+    margin: 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .cover::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(89,242,196,0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(89,242,196,0.06) 1px, transparent 1px);
+    background-size: 26px 26px;
+    mask-image: linear-gradient(to bottom, black, transparent 75%);
+  }
+  .cover-kicker {
+    font-family: var(--mono);
+    letter-spacing: 3px;
+    font-size: 9.5pt;
+    color: var(--accent);
+    text-transform: uppercase;
+    z-index: 1;
+  }
+  .cover h1 {
+    font-size: 40pt;
+    line-height: 1.08;
+    margin: 10mm 0 4mm 0;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    z-index: 1;
+  }
+  .cover h1 span { color: var(--accent); }
+  .cover .sub {
+    font-size: 13pt;
+    color: var(--text-dim);
+    max-width: 120mm;
+    z-index: 1;
+  }
+  .cover-meta {
+    z-index: 1;
+    display: flex;
+    gap: 14mm;
+    font-family: var(--mono);
+    font-size: 9pt;
+    color: var(--text-dim);
+    border-top: 1px solid var(--panel-border);
+    padding-top: 6mm;
+  }
+  .cover-meta b { color: var(--text); display: block; font-size: 9.5pt; margin-bottom: 1mm; }
+  .cover-tags { z-index: 1; display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8mm; }
+  .tag {
+    font-family: var(--mono);
+    font-size: 8pt;
+    border: 1px solid var(--panel-border);
+    color: var(--accent-2);
+    padding: 3px 9px;
+    border-radius: 20px;
+  }
+
+  /* ---------- Section headers ---------- */
+  .section-kicker {
+    font-family: var(--mono);
+    color: #0d9488;
+    letter-spacing: 2px;
+    font-size: 8pt;
+    text-transform: uppercase;
+    margin-bottom: 2mm;
+  }
+  h2.section-title {
+    font-size: 19pt;
+    margin: 0 0 6mm 0;
+    font-weight: 800;
+    color: #0b1220;
+    border-bottom: 3px solid var(--accent);
+    padding-bottom: 3mm;
+  }
+  h3 {
+    font-size: 12.5pt;
+    margin: 7mm 0 2.5mm 0;
+    color: #0b1220;
+    font-weight: 700;
+  }
+  p { margin: 0 0 3mm 0; }
+  .lede {
+    font-size: 11.5pt;
+    color: #3a4551;
+    margin-bottom: 6mm;
+  }
+
+  /* ---------- Cards / grids ---------- */
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; margin-bottom: 5mm; }
+  .grid4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 3mm; margin-bottom: 5mm; }
+  .card {
+    border: 1px solid #dde3e9;
+    border-left: 3px solid var(--accent-2);
+    border-radius: 3px;
+    padding: 3.5mm 4mm;
+    background: #f7f9fb;
+  }
+  .card h4 {
+    margin: 0 0 1.5mm 0;
+    font-size: 10pt;
+    font-family: var(--mono);
+    color: #0b1220;
+  }
+  .card p { font-size: 9.3pt; color: #4a5560; margin: 0; }
+  .stat {
+    text-align: center;
+    border: 1px solid #dde3e9;
+    border-radius: 3px;
+    padding: 4mm 2mm;
+    background: #f7f9fb;
+  }
+  .stat .num { font-family: var(--mono); font-size: 15pt; font-weight: 700; color: #0d9488; }
+  .stat .lbl { font-size: 8pt; color: #6b7684; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* ---------- Table ---------- */
+  table { width: 100%; border-collapse: collapse; margin-bottom: 5mm; font-size: 9.3pt; }
+  th {
+    text-align: left;
+    background: #0b1220;
+    color: #fff;
+    font-family: var(--mono);
+    font-size: 8pt;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 2.5mm 3mm;
+  }
+  td { padding: 2.5mm 3mm; border-bottom: 1px solid #e6eaee; vertical-align: top; }
+  tr:nth-child(even) td { background: #f7f9fb; }
+  .mono { font-family: var(--mono); font-size: 8.8pt; }
+  a { color: #0b6e5c; text-decoration: none; }
+  a::after { content: " ↗"; font-size: 7.5pt; }
+  a.src-link {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 7.8pt;
+    color: #0b6e5c;
+    word-break: break-all;
+    line-height: 1.5;
+  }
+  a.idea-link { font-family: var(--mono); }
+  .idea-inspo a { color: #0b6e5c; }
+
+  /* ---------- Idea cards ---------- */
+  .track-block { margin-bottom: 7mm; }
+  .track-head {
+    display: flex;
+    align-items: center;
+    gap: 3mm;
+    background: #0b1220;
+    color: #fff;
+    padding: 3mm 4mm;
+    border-radius: 3px 3px 0 0;
+  }
+  .track-num {
+    font-family: var(--mono);
+    background: var(--accent);
+    color: #06231b;
+    font-weight: 800;
+    width: 6mm; height: 6mm;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9pt;
+    flex-shrink: 0;
+  }
+  .track-head h3 { color: #fff; margin: 0; font-size: 11.5pt; }
+  .track-head .track-desc { font-size: 8.5pt; color: #9fb0bd; margin-top: 0.5mm; }
+  .idea-list { border: 1px solid #dde3e9; border-top: none; border-radius: 0 0 3px 3px; }
+  .idea {
+    padding: 3.5mm 4mm;
+    border-bottom: 1px solid #e6eaee;
+  }
+  .idea:last-child { border-bottom: none; }
+  .idea.top { background: #eafbf4; }
+  .idea-title-row { display: flex; justify-content: space-between; align-items: baseline; gap: 3mm; }
+  .idea-title { font-weight: 700; font-size: 10.3pt; color: #0b1220; }
+  .idea.top .idea-title::before { content: "★ TOP PICK   "; color: #0d9488; font-family: var(--mono); font-size: 8pt; letter-spacing: 1px; }
+  .idea-inspo { font-family: var(--mono); font-size: 7.8pt; color: #6b7684; white-space: nowrap; }
+  .idea-why { font-size: 9.3pt; color: #3a4551; margin-top: 1mm; }
+  .idea-why b { color: #0b1220; }
+
+  /* ---------- callout ---------- */
+  .callout {
+    border: 1px solid #f3c98a;
+    background: #fff8ec;
+    border-left: 4px solid #e8963f;
+    padding: 3.5mm 4.5mm;
+    border-radius: 3px;
+    margin: 4mm 0;
+    font-size: 9.6pt;
+  }
+  .callout b { color: #8a5217; }
+  .callout.good { border-color: #a8e6d1; background: #eafbf4; border-left-color: var(--accent-2); }
+  .callout.good b { color: #0b6e5c; }
+
+  ul.tight { margin: 0 0 3mm 0; padding-left: 4.5mm; }
+  ul.tight li { margin-bottom: 1mm; font-size: 9.6pt; }
+
+  .footer-note {
+    position: running(footer);
+  }
+  .page-inner { padding-top: 2mm; }
+</style>
+</head>
+<body>
+
+<!-- ================= COVER ================= -->
+<div class="page">
+<div class="cover">
+  <div>
+    <div class="cover-kicker">JOSA · RECLAIM HACKATHON 2026</div>
+    <h1>Research &amp;<br><span>Strategy Brief</span></h1>
+    <div class="sub">Deep-dive on the competitive landscape, judging patterns from comparable open-source hackathons, and a full catalog of winnable project ideas mapped to each track.</div>
+    <div class="cover-tags">
+      <span class="tag">open source</span>
+      <span class="tag">de-googling</span>
+      <span class="tag">interoperability</span>
+      <span class="tag">data ownership</span>
+      <span class="tag">local-first</span>
+    </div>
+  </div>
+  <div class="cover-meta">
+    <div><b>Event</b>reclaimhackathon.com</div>
+    <div><b>Organizer</b>Jordan Open Source Association (JOSA)</div>
+    <div><b>Hacking Period</b>Jul 18 – Aug 1, 2026</div>
+    <div><b>Prepared</b>July 2026</div>
+  </div>
+</div>
+</div>
+
+<!-- ================= EVENT SNAPSHOT ================= -->
+<div class="page"><div class="page-inner">
+  <div class="section-kicker">01 · Event Snapshot</div>
+  <h2 class="section-title">What We're Actually Competing In</h2>
+  <p class="lede">A themed open-source hackathon judged by OSS maintainers and community leaders — not a generic startup pitch competition. Scope discipline and real usage matter more than ambition.</p>
+
+  <div class="grid4">
+    <div class="stat"><div class="num">1000</div><div class="lbl">JOD · 1st Place</div></div>
+    <div class="stat"><div class="num">500</div><div class="lbl">JOD · 2nd Place</div></div>
+    <div class="stat"><div class="num">250</div><div class="lbl">JOD · 3rd Place</div></div>
+    <div class="stat"><div class="num">≤4</div><div class="lbl">Team Size</div></div>
+  </div>
+
+  <h3>Timeline</h3>
+  <table>
+    <tr><th>Date</th><th>Milestone</th></tr>
+    <tr><td class="mono">Jun 22</td><td>Registration opens (proposed project idea required)</td></tr>
+    <tr><td class="mono">Jul 13</td><td>Registration closes</td></tr>
+    <tr><td class="mono">Jul 18</td><td>Opening ceremony</td></tr>
+    <tr><td class="mono">Jul 18 – Aug 1</td><td>Hacking period</td></tr>
+    <tr><td class="mono">Aug 1</td><td>Submissions due (project, docs, demo)</td></tr>
+    <tr><td class="mono">Aug 1 – Aug 8</td><td>Judging by OSS maintainers &amp; community leaders</td></tr>
+    <tr><td class="mono">Aug 8</td><td>Closing ceremony / winners announced</td></tr>
+  </table>
+
+  <h3>Eligibility Criteria (what's scored)</h3>
+  <div class="grid2">
+    <div class="card"><h4>01 · Open Source</h4><p>OSI-approved license (MIT, GPLv3, Apache 2.0).</p></div>
+    <div class="card"><h4>02 · Real Problem, Real Users</h4><p>Must name the problem, who faces it, why existing solutions fall short.</p></div>
+    <div class="card"><h4>03 · Practicality</h4><p>Compatible with existing workflows — sync/bridge, don't force migration.</p></div>
+    <div class="card"><h4>04 · Realistic Scope</h4><p>One specific problem, not an entire platform. Must be maintainable post-event.</p></div>
+    <div class="card"><h4>05 · User Ownership &amp; Privacy</h4><p>Data portability, transparency, privacy by design.</p></div>
+    <div class="card"><h4>06 · Extensibility</h4><p>APIs, webhooks, plugin systems, CLI, import/export formats.</p></div>
+    <div class="card"><h4>07 · AI Usage</h4><p>AI-assisted is fine. "AI slop" — unmaintainable AI-generated code — is penalized/disqualified.</p></div>
+    <div class="card" style="border-left-color:var(--warn)"><h4>⚠ Disqualifiers</h4><p>Buzzwords w/o substance, vague problem statement, unrealistic scope, privacy violations, AI slop.</p></div>
+  </div>
+</div></div>
+
+<!-- ================= TRACKS + INSPIRATION ================= -->
+<div class="page"><div class="page-inner">
+  <div class="section-kicker">02 · The Four Tracks</div>
+  <h2 class="section-title">Track Definitions</h2>
+
+  <table>
+    <tr><th style="width:4%">#</th><th style="width:26%">Track</th><th>Focus</th></tr>
+    <tr><td class="mono">1</td><td><b>UX &amp; Accessibility</b><br><span class="mono" style="font-size:7.5pt;color:#8b98a5">"Grandma-Friendly"</span></td><td>Open alternatives to simple everyday tools (email, messaging, photos) designed for non-technical, real people. Onboarding simplification, mobile-first, beginner-friendly interfaces.</td></tr>
+    <tr><td class="mono">2</td><td><b>Open Infrastructure Tooling</b></td><td>Deployment, server management, auth/OAuth, self-hosting, federated services — make running your own infra as easy as logging into a social app.</td></tr>
+    <tr><td class="mono">3</td><td><b>Communication Freedom</b><br><span class="mono" style="font-size:7.5pt;color:#8b98a5">Interoperability &amp; Bridges</span></td><td>Keep using popular apps/platforms without invasive big-tech practices or forcing contacts to migrate. Connect closed and open ecosystems.</td></tr>
+    <tr><td class="mono">4</td><td><b>Local-First &amp; Data Ownership</b></td><td>Painless migration off centralized platforms: export/import, sync, backup, portability, offline-first and P2P architectures.</td></tr>
+  </table>
+
+  <div class="section-kicker" style="margin-top:6mm">03 · JOSA's Own Inspiration Set</div>
+  <h2 class="section-title">What They Told Us "Good" Looks Like</h2>
+  <p class="lede">Six projects JOSA cited as inspiration. Read literally, they're a map of exactly what the judges consider exemplary — and three of six share one identical architecture.</p>
+
+  <table>
+    <tr><th style="width:14%">Project</th><th style="width:34%">Mechanism</th><th style="width:14%">Maps to Track</th><th>Link</th></tr>
+    <tr><td><b>nchat</b></td><td>Unifies Telegram/WhatsApp/Signal behind one terminal client — per-protocol adapter, common interface.</td><td>3</td><td><a href="https://github.com/d99kris/nchat">github.com/d99kris/nchat</a></td></tr>
+    <tr><td><b>matterbridge</b></td><td>N-to-N chat bridge across ~15 platforms. Config-driven, REST API, no central server.</td><td>3</td><td><a href="https://github.com/42wim/matterbridge">github.com/42wim/matterbridge</a></td></tr>
+    <tr><td><b>RSS-Bridge</b></td><td>Per-site scraper adapter turns any site without RSS into a structured feed.</td><td>3</td><td><a href="https://github.com/RSS-Bridge/rss-bridge">github.com/RSS-Bridge/rss-bridge</a></td></tr>
+    <tr><td><b>YunoHost</b></td><td>Packages sysadmin complexity into installable "apps" + unified SSO/admin layer.</td><td>2</td><td><a href="https://github.com/YunoHost/yunohost">github.com/YunoHost/yunohost</a></td></tr>
+    <tr><td><b>Syncthing</b></td><td>P2P block-level file sync, zero central server, own wire protocol (BEP).</td><td>4</td><td><a href="https://github.com/syncthing/syncthing">github.com/syncthing/syncthing</a></td></tr>
+    <tr><td><b>Pixelfed</b></td><td>ActivityPub federation — data/identity portable across servers, not one company.</td><td>4</td><td><a href="https://github.com/pixelfed/pixelfed">github.com/pixelfed/pixelfed</a></td></tr>
+  </table>
+
+  <div class="callout good">
+    <b>Signal:</b> 3 of 6 cited projects (nchat, matterbridge, RSS-Bridge) are the identical shape — <i>N incompatible backends, one adapter interface</i>. 2 of 6 (Syncthing, Pixelfed) hinge on <i>no central server + portable data</i>. Only 1 (YunoHost) is a pure complexity-wrapper. <b>Zero</b> map to Track 1 — it's the one track with no worked example, meaning less pattern-matching precedent for judges but also least competitive pressure.
+  </div>
+</div></div>
+
+<!-- ================= COMPETITIVE RESEARCH ================= -->
+<div class="page"><div class="page-inner">
+  <div class="section-kicker">04 · Competitive Landscape</div>
+  <h2 class="section-title">What Wins at Comparable Events</h2>
+  <p class="lede">Researched the closest real analogs: hackathons judged by OSS maintainers on decentralization / data-ownership / interoperability themes. Reclaim has no local precedent — it's JOSA's first themed hackathon of this kind — so international touchstones are the best signal available.</p>
+
+  <h3>Closest comparable events</h3>
+  <table>
+    <tr><th style="width:22%">Event</th><th>What / Why it's relevant</th></tr>
+    <tr><td><b>FOSS Hack</b> (India, annual)</td><td>Best direct analog — FOSS-only, judged by FOSS maintainers, 2023–2025 editions with published results and judge comments.<br><a href="https://forum.fossunited.org/t/foss-hack-2024-results/3964" class="src-link">→ forum.fossunited.org/t/foss-hack-2024-results/3964</a><br><a href="https://forum.fossunited.org/t/foss-hack-2025-results/5541" class="src-link">→ forum.fossunited.org/t/foss-hack-2025-results/5541</a></td></tr>
+    <tr><td><b>Solid / ODI Hackathon</b></td><td>Two-day sprint around Tim Berners-Lee's Solid data pods. Winning team translated an abstract protocol into one concrete data-ownership use case.<br><a href="https://ua.news/en/technologies/komanda-sends-viishla-do-finalu-khakatonu-z-prototipom-financial-pod-na-zapusku-odi-solid26" class="src-link">→ ua.news/en/technologies/komanda-sends-viishla-do-finalu-khakatonu-z-prototipom-financial-pod-na-zapusku-odi-solid26</a></td></tr>
+    <tr><td><b>Decentralized Web Hackathon</b> (Devpost, 2019)</td><td>Published judging rubric: Usefulness, Tech Quality, Sponsor-Tech Integration, "WOW factor."<br><a href="https://decentralized-web.devpost.com/" class="src-link">→ decentralized-web.devpost.com</a></td></tr>
+    <tr><td><b>Matrix.org bridge hack-days</b></td><td>Bridge-building is a recurring theme, not a one-off — TADHack 2015 &amp; a 2025 WhatsApp↔Matrix hackathon.<br><a href="https://matrix.org/blog/2015/06/16/global-tadhack-matrix-hacks/" class="src-link">→ matrix.org/blog/2015/06/16/global-tadhack-matrix-hacks</a><br><a href="https://foss.events/2025/04-26-community-organiser-matrix-hackathon.html" class="src-link">→ foss.events/2025/04-26-community-organiser-matrix-hackathon.html</a></td></tr>
+    <tr><td><b>Mozilla Global Sprint</b></td><td>Explicitly framed around "erosion of privacy, centralization of power." Non-competitive (no winners) — useful for tone, not judging signal.<br><a href="https://blog.mozilla.org/en/mozilla/news/mozillas-giant-distributed-open-source-hackathon/" class="src-link">→ blog.mozilla.org/en/mozilla/news/mozillas-giant-distributed-open-source-hackathon</a></td></tr>
+  </table>
+
+  <h3>Named winning projects &amp; why they won</h3>
+  <ul class="tight">
+    <li><b>Batwara</b> (FOSS Hack 2024, ₹50k) — self-hostable Splitwise clone. Judged: "well documented, complete application." A narrow, boring, real pain point, fully finished. <a href="https://forum.fossunited.org/t/foss-hack-2024-results/3964" class="src-link">→ forum.fossunited.org/t/foss-hack-2024-results/3964</a></li>
+    <li><b>Zide</b> (FOSS Hack 2024, top prize) — cross-platform pixel-art editor, Tauri-packaged. Won on design polish and packaging, not novelty. <a href="https://forum.fossunited.org/t/foss-hack-2024-results/3964" class="src-link">→ forum.fossunited.org/t/foss-hack-2024-results/3964</a></li>
+    <li><b>Sheeja</b> (FOSS Hack 2024, top prize, tied) — hardware device. Won on "innovative and novel idea" + a great live demo. <a href="https://forum.fossunited.org/t/foss-hack-2024-results/3964" class="src-link">→ forum.fossunited.org/t/foss-hack-2024-results/3964</a></li>
+    <li><b>Clue Glue</b> (FOSS Hack 2024, ₹50k) — self-hostable feedback board. Judged on "completeness." <a href="https://forum.fossunited.org/t/foss-hack-2024-results/3964" class="src-link">→ forum.fossunited.org/t/foss-hack-2024-results/3964</a></li>
+    <li><b>goboscript</b> (FOSS Hack 2025) — text language compiling to Scratch. Won partly because judges could see <i>live commit activity during judging</i> — read as authentic building. <a href="https://forum.fossunited.org/t/foss-hack-2025-results/5541" class="src-link">→ forum.fossunited.org/t/foss-hack-2025-results/5541</a></li>
+    <li><b>Serenade</b> (FOSS Hack 2025) — competent open-source music player, but capped at mid-tier: "useful though lacking in originality." Competence alone isn't enough. <a href="https://forum.fossunited.org/t/foss-hack-2025-results/5541" class="src-link">→ forum.fossunited.org/t/foss-hack-2025-results/5541</a></li>
+    <li><b>Wroclaw-Transit</b> (FOSS Hack) — transit transparency tool built on the open GTFS standard. Rewarded specifically for standards-based interop over a custom format. <a href="https://forum.fossunited.org/t/foss-hack-2025-results/5541" class="src-link">→ forum.fossunited.org/t/foss-hack-2025-results/5541</a></li>
+    <li><b>"Financial Pod"</b> (Solid/ODI hackathon) — consolidated a user's own bank data into their own Solid pod. Won by making an abstract protocol concrete and personal, not by demoing the protocol itself. <a href="https://ua.news/en/technologies/komanda-sends-viishla-do-finalu-khakatonu-z-prototipom-financial-pod-na-zapusku-odi-solid26" class="src-link">→ ua.news/en/technologies/komanda-sends-viishla-do-finalu-khakatonu-z-prototipom-financial-pod-na-zapusku-odi-solid26</a></li>
+  </ul>
+
+  <h3>Judging patterns that repeat across every event studied</h3>
+  <ul class="tight">
+    <li><b>Completeness beats ambition, universally.</b> Every winner citation used words like "complete," "well-documented," "polished." No half-built ambitious entry placed anywhere, in any year.</li>
+    <li><b>A working demo is non-negotiable.</b> No event in this space rewards a deck over a running build.</li>
+    <li><b>Novelty is a tiebreaker on top of completeness — not a substitute for it.</b> You need real polish, real novelty, or ideally both. Neither alone at a mediocre level wins (see Serenade).</li>
+    <li><b>Narrow real pain point &gt; ambitious platform, with zero exceptions found.</b> Every traceable winner across every event solved one specific, small, relatable problem.</li>
+    <li><b>OSS-maintainer judges pattern-match against their own project's origin story.</b> RSS-Bridge, matterbridge, Syncthing, nchat all began as one maintainer scratching one specific itch — not "alternative to a whole company."</li>
+    <li><b>Standards-based interoperability is explicitly rewarded</b> (Wroclaw-Transit / GTFS) — directly parallels Reclaim's own "extensibility" criterion.</li>
+    <li><b>Visible incremental commits during the event read as authenticity</b> — directly relevant to the "AI slop" disqualifier; maintainers will likely check git history.</li>
+  </ul>
+
+  <div class="callout">
+    <b>Bottom line:</b> pick one narrow lock-in seam real Jordanian/Arabic-speaking users hit today, bridge or replace it (not rebuild the whole thing), ship a working self-hostable demo with clean docs and live commit history, expose one clean extension point. Favor "boring and complete" over "clever and half-built."
+  </div>
+</div></div>
+
+<!-- ================= IDEA CATALOG ================= -->
+<div class="page"><div class="page-inner">
+  <div class="section-kicker">05 · Idea Catalog</div>
+  <h2 class="section-title">All Winnable Ideas, By Track</h2>
+  <p class="lede">Every idea below is shaped to match the judging patterns above: one narrow seam, one clear inspiration lineage, a concrete "why" tied to the eligibility criteria.</p>
+
+  <!-- TRACK 1 -->
+  <div class="track-block">
+    <div class="track-head"><div class="track-num">1</div><div><h3>UX &amp; Accessibility / Grandma-Friendly</h3><div class="track-desc">No worked example cited by JOSA — wide open, but riskier to judge without a precedent to anchor to.</div></div></div>
+    <div class="idea-list">
+      <div class="idea">
+        <div class="idea-title-row"><div class="idea-title">Grandma-Mode Front-End for Matrix or Pixelfed</div><div class="idea-inspo">inspo: <a href="https://github.com/pixelfed/pixelfed">Pixelfed</a> / Matrix protocol</div></div>
+        <div class="idea-why"><b>Why:</b> strips device-linking, backup-phrase and instance-picking jargon down to a 3-tap flow. Satisfies "real problem, real users" directly — elderly users leaving WhatsApp/Facebook is a genuine, nameable pain point, and the scope is bounded (a UX layer, not a new protocol).</div>
+      </div>
+      <div class="idea">
+        <div class="idea-title-row"><div class="idea-title">Single-Button "Send Photo to Family" Client</div><div class="idea-inspo">inspo: Nextcloud / <a href="https://github.com/pixelfed/pixelfed">Pixelfed</a> backend</div></div>
+        <div class="idea-why"><b>Why:</b> voice-first or one-tap client on top of an existing open backend. The entire project <i>is</i> the UX simplification, keeping scope realistic while still being "extensible" (thin client on a documented API).</div>
+      </div>
+      <div class="idea">
+        <div class="idea-title-row"><div class="idea-title">Fediverse Onboarding Wizard</div><div class="idea-inspo">inspo: <a href="https://github.com/pixelfed/pixelfed">Pixelfed</a> / Mastodon instance-picker pain</div></div>
+        <div class="idea-why"><b>Why:</b> collapses the "which server do I even join" decision into a guided 3-step flow. Directly attacks the #1 known adoption blocker for federated alternatives — very demoable, very bounded.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TRACK 2 -->
+  <div class="track-block">
+    <div class="track-head"><div class="track-num">2</div><div><h3>Open Infrastructure Tooling</h3><div class="track-desc">YunoHost's shape: package and wrap complexity, don't reinvent the underlying service.</div></div></div>
+    <div class="idea-list">
+      <div class="idea">
+        <div class="idea-title-row"><div class="idea-title">One-Command "Leave Big Tech" Bundle</div><div class="idea-inspo">inspo: <a href="https://github.com/YunoHost/yunohost">YunoHost</a></div></div>
+        <div class="idea-why"><b>Why:</b> bundles 2–3 open alternatives (Pixelfed + Syncthing + Matrix) behind a single YunoHost-style SSO login. Directly mirrors the single cited example for this track, which lowers judging risk while still being a real, complete, self-contained deliverable.</div>
+      </div>
+      <div class="idea">
+        <div class="idea-title-row"><div class="idea-title">OAuth/SSO Proxy for Self-Hosted Apps</div><div class="idea-inspo">inspo: <a href="https://github.com/YunoHost/yunohost">YunoHost</a>'s SSOWAT layer</div></div>
+        <div class="idea-why"><b>Why:</b> lets self-hosted open apps keep "login with Google" convenience while data lives outside Google. A narrow, single-seam bridge for <i>identity</i> specifically — very realistic scope, satisfies "practicality" (works with existing workflows).</div>
+      </div>
+      <div class="idea">
+        <div class="idea-title-row"><div class="idea-title">Federated-Service Bootstrap Tool</div><div class="idea-inspo">inspo: <a href="https://github.com/YunoHost/yunohost">YunoHost</a> packaging model</div></div>
+        <div class="idea-why"><b>Why:</b> spins up a minimal ActivityPub/Matrix homeserver pre-wired with backups, TLS and monitoring. Scoped narrowly to just federation servers rather than "all of self-hosting" — avoids the "unrealistic scope" disqualifier.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TRACK 3 -->
+  <div class="track-block">
+    <div class="track-head"><div class="track-num">3</div><div><h3>Communication Freedom / Interoperability &amp; Bridges</h3><div class="track-desc">The dominant pattern in JOSA's own inspiration set (3 of 6 projects) — highest precedent, also highest expected competition.</div></div></div>
+    <div class="idea-list">
+      <div class="idea top">
+        <div class="idea-title-row"><div class="idea-title">WhatsApp Order Bridge for Small Jordanian Businesses</div><div class="idea-inspo">inspo: <a href="https://github.com/42wim/matterbridge">matterbridge</a> (adapter shape)</div></div>
+        <div class="idea-why"><b>Why:</b> cafes, home bakers and small shops in Jordan run their entire order flow through raw WhatsApp DMs — no inventory, no tracking, but customers will never migrate off WhatsApp. Bridge incoming WhatsApp Business messages into a small self-hosted structured order dashboard: business gets data ownership, customer changes nothing. Hyper-local, narrow, standards-based output (webhook), trivially demoable live on stage, and matches almost every eligibility bullet at once (real users, no forced migration, realistic scope, ownership/privacy since data lands on their own DB). This is the strongest single candidate researched.</div>
+      </div>
+      <div class="idea">
+        <div class="idea-title-row"><div class="idea-title">matterbridge Gap-Filler</div><div class="idea-inspo">inspo: <a href="https://github.com/42wim/matterbridge">matterbridge</a> directly</div></div>
+        <div class="idea-why"><b>Why:</b> matterbridge covers ~15 platforms already; find what's genuinely missing (Instagram DMs, a voice-note-specific bridge) and build only that adapter. Risk: competing directly against a mature, polished existing OSS project on its own turf.</div>
+      </div>
+      <div class="idea">
+        <div class="idea-title-row"><div class="idea-title">RSS-Bridge Generalized to Structured Webhooks</div><div class="idea-inspo">inspo: <a href="https://github.com/RSS-Bridge/rss-bridge">RSS-Bridge</a></div></div>
+        <div class="idea-why"><b>Why:</b> same per-source adapter pattern, applied beyond RSS — turn any closed app's public surface (App Store reviews, delivery-app order tracking) into a structured feed/webhook. Directly satisfies "extensibility."</div>
+      </div>
+      <div class="idea">
+        <div class="idea-title-row"><div class="idea-title">Unified Inbox TUI</div><div class="idea-inspo">inspo: <a href="https://github.com/d99kris/nchat">nchat</a></div></div>
+        <div class="idea-why"><b>Why:</b> nchat-style single terminal inbox unifying SMS (via local Android bridge) + email + Matrix. Appeals directly to the maintainer-judge persona (a power-user tool solving their own itch), lower mainstream "real users" breadth than the WhatsApp idea above.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TRACK 4 -->
+  <div class="track-block">
+    <div class="track-head"><div class="track-num">4</div><div><h3>Local-First &amp; Data Ownership</h3><div class="track-desc">Syncthing + Pixelfed's shape: no lock-in, portable data, zero central point of control.</div></div></div>
+    <div class="idea-list">
+      <div class="idea">
+        <div class="idea-title-row"><div class="idea-title">"Migrate Me" Universal Import Tool</div><div class="idea-inspo">inspo: <a href="https://github.com/pixelfed/pixelfed">Pixelfed</a> (portability) + <a href="https://github.com/syncthing/syncthing">Syncthing</a> (transport)</div></div>
+        <div class="idea-why"><b>Why:</b> ingests a Google Takeout / Instagram export / WhatsApp chat export and auto-imports it into the matching open alternative (Pixelfed, Matrix, a Syncthing folder). Closes the "here's your zip file, good luck" gap nobody currently solves — directly attacks "real problem, real users" and "user ownership &amp; privacy" better than a pure bridge does.</div>
+      </div>
+      <div class="idea">
+        <div class="idea-title-row"><div class="idea-title">Syncthing-Based Continuous Vendor-Lock Escape</div><div class="idea-inspo">inspo: <a href="https://github.com/syncthing/syncthing">Syncthing</a> directly</div></div>
+        <div class="idea-why"><b>Why:</b> auto-mirrors WhatsApp media / Google Photos exports continuously into a self-hosted folder — "your own iCloud" framing for people actively leaving Apple/Google. Narrow, ongoing (not one-shot), demoable as a live sync.</div>
+      </div>
+      <div class="idea">
+        <div class="idea-title-row"><div class="idea-title">Local-First Companion for Pixelfed/Mastodon</div><div class="idea-inspo">inspo: <a href="https://github.com/syncthing/syncthing">Syncthing</a> + <a href="https://github.com/pixelfed/pixelfed">Pixelfed</a> combined</div></div>
+        <div class="idea-why"><b>Why:</b> caches your own posts/photos locally via Syncthing so you always have an offline personal archive independent of instance uptime. Literally combines two of JOSA's own cited inspirations — strong pattern-match for maintainer judges.</div>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+<!-- ================= RECOMMENDATION ================= -->
+<div class="page"><div class="page-inner">
+  <div class="section-kicker">06 · Recommendation</div>
+  <h2 class="section-title">Final Call</h2>
+
+  <div class="callout good">
+    <b>Recommended track &amp; idea:</b> Track 3 — <b>WhatsApp Order Bridge for Small Jordanian Businesses.</b>
+  </div>
+
+  <p>Every comparable event studied converges on the same shape: a narrow, real, boring pain point, solved by bridging or replacing one specific lock-in seam, shipped as a working self-hostable demo with clean, documented code — not an ambitious platform, not a slide deck. JOSA's own cited inspirations are all single-maintainer projects born from one person's specific frustration with one specific proprietary chokepoint, and the judges are the kind of people who wrote projects exactly like that.</p>
+
+  <p>The WhatsApp order bridge fits that shape almost exactly: it's hyper-local (small businesses across Jordan genuinely run on raw WhatsApp DMs today), it doesn't ask anyone to migrate off WhatsApp, it's trivially demoable live (send a message on stage, watch a structured order appear in an open dashboard), and it satisfies nearly every eligibility bullet at once — real users, practicality, realistic scope, ownership/privacy, and a clean extension point (webhook out to any tool).</p>
+
+  <h3>Execution checklist for the win condition</h3>
+  <ul class="tight">
+    <li>Ship visible, incremental git commits throughout the hacking period — judges are maintainers, they will check history, and this is the direct counter to the "AI slop" disqualifier.</li>
+    <li>Write real docs: problem statement, target user, install instructions, one architecture diagram.</li>
+    <li>Expose one clean extension point (webhook or minimal REST API) to explicitly satisfy "extensibility."</li>
+    <li>Keep scope to one business type, one message flow (orders in, structured record out) — resist adding inventory/payments/analytics before the core loop is rock-solid.</li>
+    <li>Demo live with a real phone sending a real WhatsApp message — no pre-recorded video, no slide-driven pitch.</li>
+  </ul>
+
+  <h3>Fallback options</h3>
+  <p style="font-size:9.6pt">If team skills don't line up with WhatsApp Business API integration in the time window, the next-best picks in order are: <b>"Migrate Me" Universal Import Tool</b> (Track 4 — best eligibility-criteria fit after the top pick) and <b>Grandma-Mode Front-End</b> (Track 1 — least competitive track, no precedent pressure).</p>
+</div></div>
+
+<!-- ================= APPENDIX: LINKS ================= -->
+<div class="page"><div class="page-inner">
+  <div class="section-kicker">Appendix</div>
+  <h2 class="section-title">Links &amp; References</h2>
+
+  <h3>Official Event</h3>
+  <table>
+    <tr><td style="width:32%">Reclaim Hackathon site</td><td><a href="https://reclaimhackathon.com/">reclaimhackathon.com</a></td></tr>
+    <tr><td>Registration form</td><td><a href="https://surveys.josa.ngo/index.php/724737?newtest=Y&lang=en">surveys.josa.ngo/index.php/724737</a></td></tr>
+    <tr><td>Event source repo</td><td><a href="https://github.com/itsmohmans/reclaim-hackathon">github.com/itsmohmans/reclaim-hackathon</a></td></tr>
+    <tr><td>JOSA (organizer)</td><td><a href="https://josa.ngo/">josa.ngo</a></td></tr>
+    <tr><td>Drosos Foundation (supporter)</td><td><a href="https://drosos.org/">drosos.org</a></td></tr>
+    <tr><td>JOSA Instagram</td><td><a href="https://instagram.com/jordanopensource">instagram.com/jordanopensource</a></td></tr>
+    <tr><td>JOSA contact</td><td><a href="https://josa.ngo/contact-us">josa.ngo/contact-us</a></td></tr>
+  </table>
+
+  <h3>Inspiration Projects (JOSA-cited)</h3>
+  <table>
+    <tr><td style="width:32%">nchat</td><td><a href="https://github.com/d99kris/nchat">github.com/d99kris/nchat</a></td></tr>
+    <tr><td>RSS-Bridge</td><td><a href="https://github.com/RSS-Bridge/rss-bridge">github.com/RSS-Bridge/rss-bridge</a></td></tr>
+    <tr><td>YunoHost</td><td><a href="https://github.com/YunoHost/yunohost">github.com/YunoHost/yunohost</a></td></tr>
+    <tr><td>Pixelfed</td><td><a href="https://github.com/pixelfed/pixelfed">github.com/pixelfed/pixelfed</a></td></tr>
+    <tr><td>matterbridge</td><td><a href="https://github.com/42wim/matterbridge">github.com/42wim/matterbridge</a></td></tr>
+    <tr><td>Syncthing</td><td><a href="https://github.com/syncthing/syncthing">github.com/syncthing/syncthing</a></td></tr>
+  </table>
+
+  <h3>Competitive Research Sources</h3>
+  <table>
+    <tr><td style="width:32%">FOSS Hack 2023</td><td><a href="https://archive.fossunited.org/fosshack/2023">archive.fossunited.org/fosshack/2023</a></td></tr>
+    <tr><td>FOSS Hack 2024 results</td><td><a href="https://forum.fossunited.org/t/foss-hack-2024-results/3964">forum.fossunited.org/t/foss-hack-2024-results</a></td></tr>
+    <tr><td>FOSS Hack 2025 results</td><td><a href="https://forum.fossunited.org/t/foss-hack-2025-results/5541">forum.fossunited.org/t/foss-hack-2025-results</a></td></tr>
+    <tr><td>Solid/ODI hackathon writeup</td><td><a href="https://ua.news/en/technologies/komanda-sends-viishla-do-finalu-khakatonu-z-prototipom-financial-pod-na-zapusku-odi-solid26">ua.news — Financial Pod finalist</a></td></tr>
+    <tr><td>Decentralized Web Hackathon (Devpost)</td><td><a href="https://decentralized-web.devpost.com/">decentralized-web.devpost.com</a></td></tr>
+    <tr><td>Matrix TADHack 2015</td><td><a href="https://matrix.org/blog/2015/06/16/global-tadhack-matrix-hacks/">matrix.org/blog/2015/06/16</a></td></tr>
+    <tr><td>Matrix Community Organiser Hackathon 2025</td><td><a href="https://foss.events/2025/04-26-community-organiser-matrix-hackathon.html">foss.events — 2025 Matrix hackathon</a></td></tr>
+    <tr><td>Mozilla Global Sprint</td><td><a href="https://blog.mozilla.org/en/mozilla/news/mozillas-giant-distributed-open-source-hackathon/">blog.mozilla.org</a></td></tr>
+    <tr><td>Decentralized Web Summit (Internet Archive)</td><td><a href="https://blog.archive.org/2018/04/24/save-the-date-decentralized-web-summit-2018/">blog.archive.org</a></td></tr>
+  </table>
+</div></div>
+
+</body>
+</html>
