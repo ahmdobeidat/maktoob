@@ -1,6 +1,28 @@
+# Runtime state — contains WhatsApp session identity keys, private media and
+# transcripts. Anyone holding data/ can impersonate the linked account.
+/data/
+*.db
+*.db-wal
+*.db-shm
+
+# Bake-off working files: real voice notes and hand-written ground truth.
+# Third-party audio must never enter git.
+/bakeoff/
+
+# Models (gigabytes, fetched by scripts/setup.sh)
+/models/
+*.bin
+
+# Build artifacts
+/maktoob
+/vendor-build/
+/dist/
+
 # OS / editor
 .DS_Store
+Thumbs.db
 *.swp
+*~
 .idea/
 .vscode/
 
@@ -8,12 +30,4 @@
 .env
 .env.*
 *.local
-
-# Deps / build
-node_modules/
-dist/
-build/
-__pycache__/
-*.pyc
-.venv/
-venv/
+!.env.example
