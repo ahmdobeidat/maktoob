@@ -1,0 +1,29 @@
+maktoob
+Copyright (c) 2026 Ahmad Obeidat
+Licensed under the MIT License (see LICENSE).
+
+This project depends on the following third-party software. Their licenses
+differ from maktoob's and continue to apply to their respective code.
+
+  whatsmeow              MPL-2.0     https://github.com/tulir/whatsmeow
+    Go library for the WhatsApp multi-device protocol. Linked as a Go module.
+    MPL-2.0 is a file-level copyleft licence: modifications to whatsmeow's own
+    source files must be shared under MPL-2.0, while maktoob's own source
+    remains under MIT.
+
+  whisper.cpp            MIT         https://github.com/ggml-org/whisper.cpp
+    Speech recognition inference. Invoked as an external process
+    (whisper-server), not linked.
+
+  modernc.org/sqlite     BSD-3-Clause  https://gitlab.com/cznic/sqlite
+    Pure-Go SQLite driver, including FTS5. Linked as a Go module.
+
+  FFmpeg                 LGPL-2.1+ / GPL-2+ depending on build
+                                     https://ffmpeg.org
+    Audio format conversion. Invoked as an external process, not linked.
+
+  Silero VAD             MIT         https://github.com/snakers4/silero-vad
+    Voice activity detection model, loaded by whisper.cpp at runtime.
+
+Whisper models (ggml format) are distributed by the whisper.cpp project and
+are not redistributed here; scripts/setup.sh fetches them at install time.
