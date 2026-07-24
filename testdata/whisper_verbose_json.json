@@ -1,0 +1,55 @@
+{
+  "task": "transcribe",
+  "language": "english",
+  "duration": 11.0,
+  "text": " And so, my fellow Americans, ask not what your country can\n do for you, ask what you can do for your country.\n",
+  "segments": [
+    {
+      "id": 0,
+      "text": " And so, my fellow Americans, ask not what your country can",
+      "start": 0.0,
+      "end": 6.54,
+      "tokens": [
+        400,
+        370,
+        11,
+        452,
+        7177,
+        6280,
+        11,
+        1029,
+        406,
+        437,
+        428,
+        1941,
+        393
+      ],
+      "words": [
+        {
+          "word": " And",
+          "start": 0.1,
+          "end": 0.24,
+          "t_dtw": -1,
+          "probability": 0.7060123085975647
+        },
+        {
+          "word": " so",
+          "start": 0.33,
+          "end": 0.41000000000000003,
+          "t_dtw": -1,
+          "probability": 0.9944365620613098
+        },
+        {
+          "word": ",",
+          "start": 0.41000000000000003,
+          "end": 0.54,
+          "t_dtw": -1,
+          "probability": 0.6169993877410889
+        }
+      ],
+      "temperature": 0.0,
+      "avg_logprob": -0.11931712180376053,
+      "no_speech_prob": 1.9283876099507324e-05
+    }
+  ]
+}

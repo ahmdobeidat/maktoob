@@ -331,6 +331,109 @@ func (s *Store) EditSegment(ctx context.Context, segmentID int64, text string) e
 	return nil
 }
 
+// GetNote returns one note with its segments in order.
+func (s *Store) GetNote(ctx context.Context, id string) (Note, []Segment, error) {
+	var n Note
+	var received int64
+	var sender, wav, wamsg, errMsg, model, chatName sql.NullString
+
+	err := s.db.QueryRowContext(ctx, `
+		SELECT n.id, n.chat_id, c.display_name, n.source, n.sender, n.wa_message_id,
+		       n.media_path, n.wav_path, n.duration_ms, n.received_at, n.status,
+		       n.attempts, n.error, n.model
+		FROM notes n
+		JOIN chats c ON c.id = n.chat_id
+		WHERE n.id = ?`, id).
+		Scan(&n.ID, &n.ChatID, &chatName, &n.Source, &sender, &wamsg,
+			&n.MediaPath, &wav, &n.DurationMS, &received, &n.Status,
+			&n.Attempts, &errMsg, &model)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Note{}, nil, ErrNotFound
+	}
+	if err != nil {
+		return Note{}, nil, fmt.Errorf("get note: %w", err)
+	}
+
+	n.ChatName, n.Sender, n.WAMessageID = chatName.String, sender.String, wamsg.String
+	n.WavPath, n.Error, n.Model = wav.String, errMsg.String, model.String
+	n.ReceivedAt = time.UnixMilli(received)
+
+	segs, err := s.segmentsFor(ctx, id)
+	if err != nil {
+		return Note{}, nil, err
+	}
+	return n, segs, nil
+}
+
+func (s *Store) segmentsFor(ctx context.Context, noteID string) ([]Segment, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, note_id, idx, start_ms, end_ms, asr_text, edited_text,
+		       avg_logprob, no_speech_prob, mean_word_p, min_word_p,
+		       temperature, suspect, edited_at
+		FROM segments WHERE note_id = ? ORDER BY idx ASC`, noteID)
+	if err != nil {
+		return nil, fmt.Errorf("read segments: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Segment
+	for rows.Next() {
+		var sg Segment
+		var edited sql.NullString
+		var editedAt sql.NullInt64
+		var suspect int
+
+		if err := rows.Scan(&sg.ID, &sg.NoteID, &sg.Idx, &sg.StartMS, &sg.EndMS,
+			&sg.ASRText, &edited, &sg.AvgLogprob, &sg.NoSpeechProb,
+			&sg.MeanWordP, &sg.MinWordP, &sg.Temperature, &suspect, &editedAt); err != nil {
+			return nil, fmt.Errorf("read segments: %w", err)
+		}
+
+		sg.EditedText = edited.String
+		sg.Suspect = suspect == 1
+		if editedAt.Valid {
+			t := time.UnixMilli(editedAt.Int64)
+			sg.EditedAt = &t
+		}
+		out = append(out, sg)
+	}
+	return out, rows.Err()
+}
+
+// ListNotes returns notes newest first.
+func (s *Store) ListNotes(ctx context.Context, limit int) ([]Note, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT n.id, n.chat_id, c.display_name, n.source, n.sender,
+		       n.media_path, n.duration_ms, n.received_at, n.status, n.error
+		FROM notes n
+		JOIN chats c ON c.id = n.chat_id
+		ORDER BY n.received_at DESC
+		LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list notes: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Note
+	for rows.Next() {
+		var n Note
+		var received int64
+		var chatName, sender, errMsg sql.NullString
+
+		if err := rows.Scan(&n.ID, &n.ChatID, &chatName, &n.Source, &sender,
+			&n.MediaPath, &n.DurationMS, &received, &n.Status, &errMsg); err != nil {
+			return nil, fmt.Errorf("list notes: %w", err)
+		}
+		n.ChatName, n.Sender, n.Error = chatName.String, sender.String, errMsg.String
+		n.ReceivedAt = time.UnixMilli(received)
+		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+
 // buildQuery converts user input into a safe FTS5 MATCH expression. It is the
 // only path from user input to MATCH; callers must never interpolate directly.
 func buildQuery(userInput string) string {
