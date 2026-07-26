@@ -20,16 +20,31 @@ func TestWAIngestRequestMapsFields(t *testing.T) {
 	}, now)
 
 	if req.Source != "whatsapp" {
-		t.Fatalf("source: %q", req.Source)
+		t.Fatalf("source: got %q, want %q", req.Source, "whatsapp")
 	}
-	if req.ChatID != "chat-alias" || req.Sender != "sender-alias" {
-		t.Fatalf("identifiers not carried through: %+v", req)
+	if req.ChatID != "chat-alias" {
+		t.Fatalf("chat ID: got %q, want %q", req.ChatID, "chat-alias")
+	}
+	if req.ChatName != "Family" {
+		t.Fatalf("chat name: got %q, want %q", req.ChatName, "Family")
+	}
+	if req.Sender != "sender-alias" {
+		t.Fatalf("sender: got %q, want %q", req.Sender, "sender-alias")
+	}
+	if req.SenderName != "Um Ahmad" {
+		t.Fatalf("sender name: got %q, want %q", req.SenderName, "Um Ahmad")
 	}
 	if req.WAMessageID != "dedupe" {
-		t.Fatalf("dedupe key: %q", req.WAMessageID)
+		t.Fatalf("dedupe key: got %q, want %q", req.WAMessageID, "dedupe")
+	}
+	if req.Ext != ".ogg" {
+		t.Fatalf("ext: got %q, want %q", req.Ext, ".ogg")
+	}
+	if req.DurationHint != 7000 {
+		t.Fatalf("duration hint: got %d, want %d", req.DurationHint, 7000)
 	}
 	if req.Status != "" {
-		t.Fatalf("a healthy note must default to pending, got %q", req.Status)
+		t.Fatalf("status: got %q, want empty for healthy note", req.Status)
 	}
 	if !req.ReceivedAt.Equal(received) {
 		t.Fatalf("timestamp: got %v, want %v", req.ReceivedAt, received)
