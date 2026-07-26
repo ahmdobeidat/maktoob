@@ -27,6 +27,21 @@ const queueDepth = 256
 // this is generous.
 const drainGrace = 5 * time.Second
 
+// freshDeliveryContext returns a context bounded by drainGrace but detached
+// from the listener's own lifecycle context.
+//
+// Every call site here delivers a note precisely because l.ctx is cancelled or
+// about to be: a download that raced a shutdown, a job orphaned by a full
+// queue at cancellation, or one still sitting in the channel when the worker
+// exits. whatsmeow has already acknowledged each of these to the server, so a
+// note lost past this point is unrecoverable. Passing l.ctx through to
+// delivery here would hand a context-aware sink a context whose Err() is
+// already non-nil, and a sink built to respect cancellation would then refuse
+// the write for the exact case where refusing is the one thing it must not do.
+func freshDeliveryContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), drainGrace)
+}
+
 // maxMediaBytes rejects an implausible declared media length before download.
 // The field is supplied by the peer, so it is not trustworthy input.
 const maxMediaBytes = 64 << 20
@@ -240,7 +255,7 @@ func (l *Listener) run() {
 // acked each of them on arrival, so WhatsApp will not send them again, and the
 // user has no way to learn they existed.
 func (l *Listener) drain() {
-	ctx, cancel := context.WithTimeout(context.Background(), drainGrace)
+	ctx, cancel := freshDeliveryContext()
 	defer cancel()
 
 	for {
@@ -259,13 +274,21 @@ func (l *Listener) process(ctx context.Context, j job) {
 		// whatsmeow retries internally, and returns immediately on 403, 404 and
 		// 410, which is expired media on WhatsApp's CDN. There is no second
 		// chance to take, so record the arrival and move on.
+		//
+		// ctx (the download context) is not used for delivery below: if this
+		// error is ctx.Err() because the listener is shutting down, ctx is
+		// already cancelled, and delivery needs its own uncancelled window. See
+		// freshDeliveryContext.
 		l.Log.Warn("voice note download failed", "error", err)
-		l.deliverFailedCtx(ctx, j.note, err.Error())
+		l.deliverFailed(j.note, err.Error())
 		return
 	}
 
 	j.note.Audio = bytes.NewReader(data)
-	l.deliver(ctx, j.note)
+
+	dctx, cancel := freshDeliveryContext()
+	defer cancel()
+	l.deliver(dctx, j.note)
 }
 
 func (l *Listener) deliver(ctx context.Context, n VoiceNote) {
@@ -277,7 +300,7 @@ func (l *Listener) deliver(ctx context.Context, n VoiceNote) {
 }
 
 func (l *Listener) deliverFailed(n VoiceNote, reason string) {
-	ctx, cancel := context.WithTimeout(context.Background(), drainGrace)
+	ctx, cancel := freshDeliveryContext()
 	defer cancel()
 	l.deliverFailedCtx(ctx, n, reason)
 }
