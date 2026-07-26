@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -486,5 +487,46 @@ func TestNoteIDByWAMessageID(t *testing.T) {
 	}
 	if _, err := st.NoteIDByWAMessageID(ctx, "nope"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("want ErrNotFound, got %v", err)
+	}
+}
+
+// The database holds every transcript, and the -wal sidecar holds transcript
+// text that a killed process leaves on disk. internal/wa already chmods
+// session.db and its sidecars to 0600; this file had no equivalent and was
+// created at the process umask, measured at 0644. The 0700 data directory means
+// there is no real exposure, but a privacy claim resting only on the directory
+// above it is one refactor from being false, and the asymmetry between the two
+// packages is exactly what an adversarial reader looks for.
+func TestDatabaseFilesAreOwnerOnly(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "maktoob.db")
+
+	st, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	// The sidecars exist for the life of the connection under WAL, so a write
+	// first makes the assertion cover all three rather than only the main file.
+	if err := st.UpsertChat(context.Background(), "c1", "chat"); err != nil {
+		t.Fatal(err)
+	}
+
+	checked := 0
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		fi, err := os.Stat(path + suffix)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := fi.Mode().Perm(); got != 0o600 {
+			t.Errorf("maktoob.db%s is %04o, want 0600", suffix, got)
+		}
+		checked++
+	}
+	if checked == 0 {
+		t.Fatal("no database files found to check")
 	}
 }

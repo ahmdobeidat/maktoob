@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -111,7 +112,37 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 
+	if err := restrictMode(path); err != nil {
+		db.Close()
+		return nil, err
+	}
+
 	return &Store{db: db}, nil
+}
+
+// restrictMode makes the database owner-only, mirroring what pair.go already
+// does for the session store, and for the same reason.
+//
+// modernc.org/sqlite creates the database at the process umask, which under a
+// typical 022 is 0644, and WAL mode means the same is true of the -wal and -shm
+// sidecars. This is the file the whole alias-and-salt argument is written
+// about: it holds every transcript, and a killed process leaves maktoob.db-wal
+// on disk full of transcript text. The 0700 data directory means there is no
+// real exposure today, but a privacy claim that only holds because of the
+// directory above it is one refactor away from not holding, and the asymmetry
+// between the two packages is the first thing an adversarial reader greps for.
+//
+// The window between creation and chmod is real and is not closed here. Closing
+// it needs the umask set around the open, which is process-global and racy with
+// any other goroutine opening a file. It is a documented, accepted limitation;
+// this only makes the two packages agree.
+func restrictMode(path string) error {
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		if err := os.Chmod(path+suffix, 0o600); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("restrict database: %w", err)
+		}
+	}
+	return nil
 }
 
 // migrate applies changes that CREATE TABLE IF NOT EXISTS cannot make to a

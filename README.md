@@ -92,7 +92,8 @@ README rather than described in adjectives.
   never persists view-once media.
 - **Data at rest:** everything lives under `data/`. That directory contains your
   account's **identity keys** — anyone who copies it can impersonate your WhatsApp.
-  It is created `0600` and is gitignored. Backing it up copies your credentials.
+  It is created `0700`, the files inside it `0600`, and it is gitignored. Backing
+  it up copies your credentials.
 - **Deleting is a first-class operation:** `maktoob purge` wipes stored data,
   `maktoob logout` revokes the companion session.
 
