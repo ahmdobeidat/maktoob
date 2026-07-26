@@ -29,16 +29,6 @@ func newTestStore(t *testing.T) *Store {
 	return s
 }
 
-func openTestStore(t *testing.T) *Store {
-	t.Helper()
-	st, err := Open(filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { st.Close() })
-	return st
-}
-
 func seedNote(t *testing.T, s *Store, id string) Note {
 	t.Helper()
 	ctx := context.Background()
@@ -376,7 +366,7 @@ func TestOpenAddsSenderNameToExistingDatabase(t *testing.T) {
 }
 
 func TestMetaRoundTrip(t *testing.T) {
-	st := openTestStore(t)
+	st := newTestStore(t)
 	ctx := context.Background()
 
 	if _, err := st.GetMeta(ctx, "salt-check"); !errors.Is(err, ErrNotFound) {
