@@ -213,7 +213,7 @@ func (l *Listener) Start(ctx context.Context) error {
 	go l.run()
 
 	if l.Client != nil {
-		l.handlerID = l.Client.AddEventHandler(l.onEvent)
+		l.handlerID = l.Client.AddEventHandler(l.HandleEvent)
 	}
 	return nil
 }
@@ -237,11 +237,18 @@ func (l *Listener) Close() error {
 	return nil
 }
 
-// onEvent runs on whatsmeow's node handler goroutine, which processes one node
-// at a time and tolerates a slow handler for five minutes before continuing it
-// in the background. Everything expensive belongs in the worker; this function
-// filters, aliases, and hands off.
-func (l *Listener) onEvent(raw any) {
+// HandleEvent runs on whatsmeow's node handler goroutine, which processes one
+// node at a time and tolerates a slow handler for five minutes before
+// continuing it in the background. Everything expensive belongs in the worker;
+// this function filters, aliases, and hands off.
+//
+// It is exported because it is this package's entire ingress, and because
+// nothing else can drive it. Sink is the only outbound edge and whatsmeow's
+// dispatchEvent is unexported, so without this the seam from a WhatsApp event
+// through to a stored note — the actual product — can only be tested inside
+// this package, with the two halves it joins mocked out. cmd/maktoob is the one
+// place allowed to import both sides, and this is what lets it prove they fit.
+func (l *Listener) HandleEvent(raw any) {
 	switch evt := raw.(type) {
 	case *events.Message:
 		l.enqueue(evt)

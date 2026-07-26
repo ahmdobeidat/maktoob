@@ -180,7 +180,7 @@ func TestAcceptedNoteReachesTheSink(t *testing.T) {
 	l, _ := newTestListener(t, sink, fakeDownloader{data: []byte("audio")})
 
 	dm := types.JID{User: "962790000000", Server: types.DefaultUserServer}
-	l.onEvent(message(dm, audioPTT()))
+	l.HandleEvent(message(dm, audioPTT()))
 	sink.wait(t, 1)
 
 	got := sink.notes()[0]
@@ -217,7 +217,7 @@ func TestDeliveryBudgetExceedsTheDatabaseBusyTimeout(t *testing.T) {
 	l, _ := newTestListener(t, sink, fakeDownloader{data: []byte("audio")})
 
 	dm := types.JID{User: "962790000000", Server: types.DefaultUserServer}
-	l.onEvent(message(dm, audioPTT()))
+	l.HandleEvent(message(dm, audioPTT()))
 	sink.wait(t, 1)
 
 	got := sink.budget(0)
@@ -239,7 +239,7 @@ func TestHandlerDoesNotBlock(t *testing.T) {
 	dm := types.JID{User: "962790000000", Server: types.DefaultUserServer}
 
 	start := time.Now()
-	l.onEvent(message(dm, audioPTT()))
+	l.HandleEvent(message(dm, audioPTT()))
 	if elapsed := time.Since(start); elapsed > 10*time.Millisecond {
 		t.Fatalf("handler took %s, want under 10ms", elapsed)
 	}
@@ -250,7 +250,7 @@ func TestFailedDownloadIsRecordedNotDropped(t *testing.T) {
 	l, _ := newTestListener(t, sink, fakeDownloader{err: errors.New("410 gone")})
 
 	dm := types.JID{User: "962790000000", Server: types.DefaultUserServer}
-	l.onEvent(message(dm, audioPTT()))
+	l.HandleEvent(message(dm, audioPTT()))
 	sink.wait(t, 1)
 
 	got := sink.notes()[0]
@@ -298,14 +298,14 @@ func TestSinkErrorDoesNotKillListener(t *testing.T) {
 	l, _ := newTestListener(t, sink, fakeDownloader{data: []byte("a")})
 
 	dm := types.JID{User: "962790000000", Server: types.DefaultUserServer}
-	l.onEvent(message(dm, audioPTT()))
+	l.HandleEvent(message(dm, audioPTT()))
 	sink.wait(t, 1)
 
 	sink.mu.Lock()
 	sink.err = nil
 	sink.mu.Unlock()
 
-	l.onEvent(message(dm, audioPTT()))
+	l.HandleEvent(message(dm, audioPTT()))
 	sink.wait(t, 1)
 
 	if len(sink.notes()) != 2 {
@@ -317,7 +317,7 @@ func TestDroppedMessagesNeverReachTheSink(t *testing.T) {
 	sink := newFakeSink()
 	l, _ := newTestListener(t, sink, fakeDownloader{data: []byte("a")})
 
-	l.onEvent(message(types.StatusBroadcastJID, audioPTT()))
+	l.HandleEvent(message(types.StatusBroadcastJID, audioPTT()))
 	time.Sleep(100 * time.Millisecond)
 
 	if n := len(sink.notes()); n != 0 {
@@ -340,7 +340,7 @@ func TestLoggedOutReportsStateAndStops(t *testing.T) {
 	}
 	defer l.Close()
 
-	l.onEvent(&events.LoggedOut{})
+	l.HandleEvent(&events.LoggedOut{})
 
 	// Checked before the deferred Close(), which cancels the context itself:
 	// without this, a LoggedOut handler that forgot to call l.cancel() would
@@ -387,7 +387,7 @@ func TestNoteArrivingAfterCloseIsStillRecorded(t *testing.T) {
 	for i := 0; i < notes; i++ {
 		m := message(dm, audioPTT())
 		m.Info.ID = fmt.Sprintf("3EB0%04d", i)
-		l.onEvent(m)
+		l.HandleEvent(m)
 	}
 	sink.wait(t, notes)
 
@@ -458,8 +458,8 @@ func TestShutdownDrainsQueuedJobs(t *testing.T) {
 	second := message(dm, audioPTT())
 	second.Info.ID = "3EB0DEF"
 
-	l.onEvent(first)
-	l.onEvent(second)
+	l.HandleEvent(first)
+	l.HandleEvent(second)
 
 	cancel()
 	if err := l.Close(); err != nil {
@@ -517,7 +517,7 @@ func TestFullQueueCancellationDeliversTheBlockedNote(t *testing.T) {
 
 	returned := make(chan struct{})
 	go func() {
-		l.onEvent(blocked)
+		l.HandleEvent(blocked)
 		close(returned)
 	}()
 
