@@ -18,6 +18,17 @@ differ from maktoob's and continue to apply to their respective code.
   modernc.org/sqlite     BSD-3-Clause  https://gitlab.com/cznic/sqlite
     Pure-Go SQLite driver, including FTS5. Linked as a Go module.
 
+  google.golang.org/protobuf
+                         BSD-3-Clause  https://github.com/protocolbuffers/protobuf-go
+    Protocol Buffers runtime. Linked as a Go module. Used directly to build
+    WhatsApp message fields and to zero whatsmeow's history-sync limits.
+
+  qrterminal            MIT           https://github.com/mdp/qrterminal
+    Renders the device-pairing QR code in the terminal. Linked as a Go module.
+
+  rsc.io/qr             BSD-3-Clause  https://github.com/rsc/qr
+    QR encoding, pulled in by qrterminal. Linked as a Go module.
+
   FFmpeg                 LGPL-2.1+ / GPL-2+ depending on build
                                      https://ffmpeg.org
     Audio format conversion. Invoked as an external process, not linked.
