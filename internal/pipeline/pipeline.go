@@ -70,6 +70,11 @@ type IngestRequest struct {
 // the user still learns that a voice note arrived, which matters most to the
 // user who cannot simply play it to find out.
 //
+// When req.Ext is empty, it defaults to .bin. This deliberately differs from the
+// pre-existing import behaviour, which left an extensionless source file
+// extensionless; a file with no extension is worse to serve and worse to debug
+// than one explicitly marked .bin.
+//
 // created reports whether a new note was inserted. False means the dedupe key
 // was already present — expected traffic on reconnect, not an error — in which
 // case the freshly written file is removed and id names the existing note.
