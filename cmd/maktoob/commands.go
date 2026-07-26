@@ -216,7 +216,7 @@ func checkSalt(ctx context.Context, st *store.Store, salt wa.Salt) error {
 }
 
 func cmdPair(ctx context.Context, cfg config) error {
-	client, err := wa.Connect(ctx, cfg.sessionPath(), slog.Default())
+	client, err := wa.Connect(ctx, cfg.sessionPath(), slog.Default(), cfg.verbose)
 	if err != nil {
 		return err
 	}
@@ -226,7 +226,7 @@ func cmdPair(ctx context.Context, cfg config) error {
 }
 
 func cmdLogout(ctx context.Context, cfg config) error {
-	client, err := wa.Connect(ctx, cfg.sessionPath(), slog.Default())
+	client, err := wa.Connect(ctx, cfg.sessionPath(), slog.Default(), cfg.verbose)
 	if err != nil {
 		return err
 	}

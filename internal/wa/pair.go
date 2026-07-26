@@ -48,13 +48,24 @@ func init() {
 //
 // The session store holds the account's identity keys: anyone with this file can
 // impersonate the WhatsApp account. It is created owner-only, inside a directory
-// that is owner-only, and PRIVACY.md says so in as many words.
-func Connect(ctx context.Context, sessionPath string, log *slog.Logger) (*whatsmeow.Client, error) {
+// that is owner-only.
+//
+// whatsmeow's own logging is silent unless verbose is set, and the default is
+// silence for a privacy reason rather than a tidiness one. whatsmeow logs
+// un-aliased JIDs at Warn and Error during entirely routine operation — device
+// list hash changes, verified-name parse failures, push-name history sync,
+// retry-receipt handling. slog.Default() emits at Info and above, so all of
+// those reach stderr, and `maktoob serve 2> log.txt` or anything under systemd
+// then writes contacts' phone numbers to a file outside data/. That is the exact
+// partial-disclosure the alias salt exists to prevent, arriving through a third
+// outbound signal the design does not acknowledge. Callers that need the
+// diagnostics have to ask, and the flag that asks says what it costs.
+func Connect(ctx context.Context, sessionPath string, log *slog.Logger, verbose bool) (*whatsmeow.Client, error) {
 	if err := os.MkdirAll(filepath.Dir(sessionPath), 0o700); err != nil {
 		return nil, fmt.Errorf("create session directory: %w", err)
 	}
 
-	waLogger := slogAdapter{log: fallbackLogger(log)}
+	waLogger := whatsmeowLogger(log, verbose)
 
 	dsn := "file:" + sessionPath + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
 	container, err := sqlstore.New(ctx, "sqlite", dsn, waLogger)
@@ -137,6 +148,17 @@ func Logout(ctx context.Context, client *whatsmeow.Client) error {
 	return nil
 }
 
+// whatsmeowLogger picks the logger handed to whatsmeow. It is a named function
+// rather than an inline branch so the default can be asserted in a test: the
+// claim that maktoob does not put phone numbers on stderr is only as good as
+// the thing that decides it.
+func whatsmeowLogger(log *slog.Logger, verbose bool) waLog.Logger {
+	if !verbose {
+		return waLog.Noop
+	}
+	return slogAdapter{log: fallbackLogger(log)}
+}
+
 // fallbackLogger returns log, or slog.Default() if log is nil, matching the
 // nil-tolerant convention Listener.Log already uses elsewhere in this
 // package. A Connect caller that doesn't care about logging shouldn't have
@@ -154,6 +176,9 @@ func fallbackLogger(log *slog.Logger) *slog.Logger {
 // parameter would be accepted and then ignored, which is worse than not
 // having it: a caller who passes a real logger has no reason to expect
 // silence back, and pairing failures are exactly when that silence hurts.
+//
+// It is installed only when Connect is asked for it, because what it forwards
+// includes un-aliased phone numbers. See Connect.
 type slogAdapter struct {
 	log *slog.Logger
 }

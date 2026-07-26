@@ -21,10 +21,13 @@ Usage:
   maktoob logout             unlink the device (transcripts are untouched)
 
 Flags:
-  -data   directory for media, database and session state (default "data")
-  -asr    whisper-server base URL (default "http://127.0.0.1:8642")
-  -model  model name recorded against transcripts (default "large-v3-turbo")
-  -lang   language to transcribe as, or "auto" to detect (default "ar")
+  -data     directory for media, database and session state (default "data")
+  -asr      whisper-server base URL (default "http://127.0.0.1:8642")
+  -model    model name recorded against transcripts (default "large-v3-turbo")
+  -lang     language to transcribe as, or "auto" to detect (default "ar")
+  -verbose  print whatsmeow's own diagnostics to stderr. These contain your
+            contacts' phone numbers in the clear, so do not use this where
+            stderr is redirected to a file or captured by a service manager.
 `
 
 func main() {
@@ -52,6 +55,13 @@ func run(args []string) error {
 	// transcribe confidently into the language it was told, and neither the
 	// confidence score nor the no-speech probability detects the mismatch.
 	lang := fs.String("lang", "ar", "language to transcribe as, or \"auto\" to detect")
+	// Off by default because what it turns on is not merely noisy. whatsmeow
+	// logs un-aliased JIDs at Warn and Error in ordinary operation, so with this
+	// set, redirecting stderr writes contacts' phone numbers to a file outside
+	// data/ and defeats the alias salt. The help text says so rather than
+	// leaving the user to discover it in a log.
+	verbose := fs.Bool("verbose", false,
+		"print whatsmeow diagnostics to stderr; these include contacts' phone numbers")
 	if err := fs.Parse(rest); err != nil {
 		return err
 	}
@@ -66,6 +76,7 @@ func run(args []string) error {
 		asrURL:  *asrURL,
 		model:   *model,
 		lang:    *lang,
+		verbose: *verbose,
 	}
 
 	switch command {
@@ -95,6 +106,7 @@ type config struct {
 	asrURL  string
 	model   string
 	lang    string
+	verbose bool
 }
 
 func (c config) dbPath() string      { return filepath.Join(c.dataDir, "maktoob.db") }
