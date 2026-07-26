@@ -18,6 +18,7 @@ type fakeSink struct {
 	mu      sync.Mutex
 	got     []VoiceNote
 	ctxErrs []error
+	budgets []time.Duration
 	err     error
 	seen    chan struct{}
 }
@@ -34,9 +35,17 @@ func (f *fakeSink) Ingest(ctx context.Context, n VoiceNote) error {
 	// (delivery given an already-cancelled context) from ordinary cleanup.
 	ctxErr := ctx.Err()
 
+	// The remaining budget is read here for the same reason: it is only
+	// meaningful while the call is in progress.
+	var budget time.Duration
+	if dl, ok := ctx.Deadline(); ok {
+		budget = time.Until(dl)
+	}
+
 	f.mu.Lock()
 	f.got = append(f.got, n)
 	f.ctxErrs = append(f.ctxErrs, ctxErr)
+	f.budgets = append(f.budgets, budget)
 	err := f.err
 	f.mu.Unlock()
 	f.seen <- struct{}{}
@@ -60,6 +69,13 @@ func (f *fakeSink) ctxErrors() []error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]error(nil), f.ctxErrs...)
+}
+
+// budget returns how much time the i'th delivery was actually given.
+func (f *fakeSink) budget(i int) time.Duration {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.budgets[i]
 }
 
 func (f *fakeSink) wait(t *testing.T, n int) {
@@ -125,6 +141,33 @@ func TestAcceptedNoteReachesTheSink(t *testing.T) {
 	body, err := io.ReadAll(got.Audio)
 	if err != nil || string(body) != "audio" {
 		t.Fatalf("audio body %q err %v", body, err)
+	}
+}
+
+// A successful delivery writes up to maxMediaBytes to disk, probes the result
+// with ffprobe (which allots itself 60s on its own), then makes two writes
+// against a database opened with busy_timeout(5000). A delivery deadline at or
+// near that busy timeout means the ordinary lock contention busy_timeout exists
+// to absorb instead exhausts the whole delivery window, and the note is lost
+// permanently because whatsmeow acknowledged it on arrival.
+func TestDeliveryBudgetExceedsTheDatabaseBusyTimeout(t *testing.T) {
+	// store.Open's DSN carries _pragma=busy_timeout(5000). internal/wa cannot
+	// import internal/store, so the value is restated here rather than shared.
+	const busyTimeout = 5 * time.Second
+
+	sink := newFakeSink()
+	l, _ := newTestListener(t, sink, fakeDownloader{data: []byte("audio")})
+
+	dm := types.JID{User: "962790000000", Server: types.DefaultUserServer}
+	l.onEvent(message(dm, audioPTT()))
+	sink.wait(t, 1)
+
+	got := sink.budget(0)
+	if got <= busyTimeout {
+		t.Fatalf("delivery budget %s does not exceed the database busy timeout %s", got, busyTimeout)
+	}
+	if got < time.Minute {
+		t.Fatalf("delivery budget %s is under the 60s ffprobe allowance on its own", got)
 	}
 }
 

@@ -24,13 +24,33 @@ const queueDepth = 256
 
 // drainGrace bounds how long shutdown spends recording jobs that never made it
 // to the worker. They are metadata structs whose downloads have not started, so
-// this is generous.
+// a single insert each, and this bounds the whole drain loop rather than one
+// note. It exists to stop Ctrl-C hanging, so it is deliberately short.
 const drainGrace = 5 * time.Second
 
-// freshDeliveryContext returns a context bounded by drainGrace but detached
-// from the listener's own lifecycle context.
+// deliveryTimeout bounds one ordinary delivery: a note that has its audio and
+// is on its way into the store.
 //
-// Every call site here delivers a note precisely because l.ctx is cancelled or
+// It is separate from drainGrace, and much larger, because the work behind it
+// is not comparable. A delivery writes up to maxMediaBytes to disk, then probes
+// the file with ffprobe, which allots itself audio.ConvertTimeout (60s) on its
+// own, then performs two database writes. The database is opened with
+// busy_timeout(5000), so lock contention is meant to be absorbed by waiting up
+// to five seconds per statement.
+//
+// The previous value here was drainGrace itself, which made the delivery
+// deadline exactly equal to the busy timeout: the very contention busy_timeout
+// exists to ride out would instead consume the entire delivery window, and
+// CreateNote would return a deadline error. A note lost that way is lost for
+// good, because whatsmeow acknowledged it to the server on arrival and nothing
+// will redeliver it. One writer makes that rare; serve, which runs the web
+// layer, the transcription worker and the listener in one process, will not.
+const deliveryTimeout = 90 * time.Second
+
+// freshDeliveryContext returns a context bounded by timeout but detached from
+// the listener's own lifecycle context.
+//
+// Some call sites here deliver a note precisely because l.ctx is cancelled or
 // about to be: a download that raced a shutdown, a job orphaned by a full
 // queue at cancellation, or one still sitting in the channel when the worker
 // exits. whatsmeow has already acknowledged each of these to the server, so a
@@ -38,8 +58,8 @@ const drainGrace = 5 * time.Second
 // delivery here would hand a context-aware sink a context whose Err() is
 // already non-nil, and a sink built to respect cancellation would then refuse
 // the write for the exact case where refusing is the one thing it must not do.
-func freshDeliveryContext() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.Background(), drainGrace)
+func freshDeliveryContext(timeout time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), timeout)
 }
 
 // maxMediaBytes rejects an implausible declared media length before download.
@@ -255,7 +275,7 @@ func (l *Listener) run() {
 // acked each of them on arrival, so WhatsApp will not send them again, and the
 // user has no way to learn they existed.
 func (l *Listener) drain() {
-	ctx, cancel := freshDeliveryContext()
+	ctx, cancel := freshDeliveryContext(drainGrace)
 	defer cancel()
 
 	for {
@@ -286,7 +306,7 @@ func (l *Listener) process(ctx context.Context, j job) {
 
 	j.note.Audio = bytes.NewReader(data)
 
-	dctx, cancel := freshDeliveryContext()
+	dctx, cancel := freshDeliveryContext(deliveryTimeout)
 	defer cancel()
 	l.deliver(dctx, j.note)
 }
@@ -299,8 +319,15 @@ func (l *Listener) deliver(ctx context.Context, n VoiceNote) {
 	}
 }
 
+// deliverFailed records a note whose audio is gone. It gets deliveryTimeout
+// rather than drainGrace even on the shutdown path, because it still performs
+// the same two database writes against the same busy_timeout(5000) as a
+// successful delivery, and losing the row to lock contention would leave the
+// user with no trace of a note they can neither read nor hear. drain() is the
+// one exception: it passes its own, shorter context, because it is bounding a
+// whole loop rather than a single note.
 func (l *Listener) deliverFailed(n VoiceNote, reason string) {
-	ctx, cancel := freshDeliveryContext()
+	ctx, cancel := freshDeliveryContext(deliveryTimeout)
 	defer cancel()
 	l.deliverFailedCtx(ctx, n, reason)
 }
