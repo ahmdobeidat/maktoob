@@ -54,13 +54,24 @@ func Connect(ctx context.Context, sessionPath string, log *slog.Logger) (*whatsm
 		return nil, fmt.Errorf("create session directory: %w", err)
 	}
 
+	waLogger := slogAdapter{log: fallbackLogger(log)}
+
 	dsn := "file:" + sessionPath + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
-	container, err := sqlstore.New(ctx, "sqlite", dsn, waLog.Noop)
+	container, err := sqlstore.New(ctx, "sqlite", dsn, waLogger)
 	if err != nil {
 		return nil, fmt.Errorf("open session store: %w", err)
 	}
-	if err := os.Chmod(sessionPath, 0o600); err != nil && !os.IsNotExist(err) {
-		return nil, fmt.Errorf("restrict session store: %w", err)
+
+	// WAL mode means the identity keys written during pairing land in
+	// session.db-wal before they are ever checkpointed into session.db, and
+	// modernc.org/sqlite creates all three files at the process umask (0644
+	// under a typical 022) rather than inheriting a mode from the DSN. Chmod
+	// the sidecars too, or the doc comment above is a claim about one file
+	// out of three for as long as the process runs.
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		if err := os.Chmod(sessionPath+suffix, 0o600); err != nil && !os.IsNotExist(err) {
+			return nil, fmt.Errorf("restrict session store: %w", err)
+		}
 	}
 
 	device, err := container.GetFirstDevice(ctx)
@@ -68,7 +79,7 @@ func Connect(ctx context.Context, sessionPath string, log *slog.Logger) (*whatsm
 		return nil, fmt.Errorf("read linked device: %w", err)
 	}
 
-	return whatsmeow.NewClient(device, waLog.Noop), nil
+	return whatsmeow.NewClient(device, waLogger), nil
 }
 
 // Pair prints a QR code and blocks until the user scans it or ctx is cancelled.
@@ -98,6 +109,15 @@ func Pair(ctx context.Context, client *whatsmeow.Client, out io.Writer) error {
 		case "timeout":
 			return fmt.Errorf("pairing timed out, run the command again")
 		default:
+			// evt.Error carries the actual failure for the "error" event and
+			// for whatsmeow's other named error events (e.g. client outdated,
+			// scanned without multidevice); falling back to the bare event
+			// name only when whatsmeow did not set it avoids reporting
+			// "pairing failed: error" when the real cause is one Fprintln
+			// away.
+			if evt.Error != nil {
+				return fmt.Errorf("pairing failed: %w", evt.Error)
+			}
 			return fmt.Errorf("pairing failed: %s", evt.Event)
 		}
 	}
@@ -115,4 +135,37 @@ func Logout(ctx context.Context, client *whatsmeow.Client) error {
 		return fmt.Errorf("logout: %w", err)
 	}
 	return nil
+}
+
+// fallbackLogger returns log, or slog.Default() if log is nil, matching the
+// nil-tolerant convention Listener.Log already uses elsewhere in this
+// package. A Connect caller that doesn't care about logging shouldn't have
+// to pass one just to avoid a nil dereference.
+func fallbackLogger(log *slog.Logger) *slog.Logger {
+	if log == nil {
+		return slog.Default()
+	}
+	return log
+}
+
+// slogAdapter satisfies whatsmeow's waLog.Logger interface over a
+// *slog.Logger, so that a caller-supplied logger actually receives
+// whatsmeow's connection and pairing diagnostics. Without it, Connect's log
+// parameter would be accepted and then ignored, which is worse than not
+// having it: a caller who passes a real logger has no reason to expect
+// silence back, and pairing failures are exactly when that silence hurts.
+type slogAdapter struct {
+	log *slog.Logger
+}
+
+func (a slogAdapter) Warnf(msg string, args ...interface{})  { a.log.Warn(fmt.Sprintf(msg, args...)) }
+func (a slogAdapter) Errorf(msg string, args ...interface{}) { a.log.Error(fmt.Sprintf(msg, args...)) }
+func (a slogAdapter) Infof(msg string, args ...interface{})  { a.log.Info(fmt.Sprintf(msg, args...)) }
+func (a slogAdapter) Debugf(msg string, args ...interface{}) { a.log.Debug(fmt.Sprintf(msg, args...)) }
+
+// Sub returns a logger scoped to module, mirroring whatsmeow's own submodule
+// loggers (e.g. "Client", "Socket") so log lines from different parts of the
+// library can still be told apart once they're flowing through slog.
+func (a slogAdapter) Sub(module string) waLog.Logger {
+	return slogAdapter{log: a.log.With("module", module)}
 }
