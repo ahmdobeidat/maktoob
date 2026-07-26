@@ -78,7 +78,7 @@ type IngestRequest struct {
 // created reports whether a new note was inserted. False means the dedupe key
 // was already present — expected traffic on reconnect, not an error — in which
 // case the freshly written file is removed and id names the existing note.
-func (p *Pipeline) IngestReader(ctx context.Context, r io.Reader, req IngestRequest) (string, bool, error) {
+func (p *Pipeline) IngestReader(ctx context.Context, r io.Reader, req IngestRequest) (id string, created bool, err error) {
 	if err := os.MkdirAll(p.MediaDir, 0o700); err != nil {
 		return "", false, fmt.Errorf("create media directory: %w", err)
 	}
@@ -88,9 +88,26 @@ func (p *Pipeline) IngestReader(ctx context.Context, r io.Reader, req IngestRequ
 		ext = ".bin"
 	}
 
-	id := uuid.NewString()
+	id = uuid.NewString()
 	durationMS := req.DurationHint
 	var dst string
+
+	// Nothing references dst until CreateNote inserts the row that names it, so
+	// any error return after the write leaves a file no query can ever reach.
+	// On the import path that was survivable: the user re-runs the command. On
+	// the WhatsApp path it is not. whatsmeow acknowledged the message as it
+	// handed it to us and will not redeliver, and the user is deaf and cannot
+	// play the audio to recover what the note said, so a transient store failure
+	// is permanent data loss plus a media directory that only grows.
+	//
+	// The deferred removal is keyed on the named err return so it covers every
+	// exit below, including ones added later. The duplicate-key path clears dst
+	// itself and returns nil, so it keeps its existing behaviour.
+	defer func() {
+		if err != nil && dst != "" {
+			os.Remove(dst)
+		}
+	}()
 
 	if r != nil {
 		dst = filepath.Join(p.MediaDir, id+ext)
@@ -108,7 +125,7 @@ func (p *Pipeline) IngestReader(ctx context.Context, r io.Reader, req IngestRequ
 		return "", false, err
 	}
 
-	created, err := p.Store.CreateNote(ctx, store.Note{
+	created, err = p.Store.CreateNote(ctx, store.Note{
 		ID:          id,
 		ChatID:      req.ChatID,
 		Source:      req.Source,
@@ -131,6 +148,9 @@ func (p *Pipeline) IngestReader(ctx context.Context, r io.Reader, req IngestRequ
 		// duplicate delivery, forever.
 		if dst != "" {
 			os.Remove(dst)
+			// Cleared so the deferred removal does not chase a path this branch
+			// has already dealt with.
+			dst = ""
 		}
 		existing, err := p.Store.NoteIDByWAMessageID(ctx, req.WAMessageID)
 		if err != nil {
