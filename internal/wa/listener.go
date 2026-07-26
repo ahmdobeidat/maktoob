@@ -167,6 +167,13 @@ type Listener struct {
 	once      sync.Once
 	handlerID uint32
 
+	// removeWG tracks the goroutine Close starts to unregister the event handler.
+	// Close deliberately does not wait on it — waiting is what would deadlock when
+	// Close is called from inside a handler — so this exists to make the removal's
+	// completion observable to a test, which otherwise could only poll a
+	// destructive check that passes whether or not Close did anything.
+	removeWG sync.WaitGroup
+
 	// mu guards closed, and is held across enqueue's send to l.jobs.
 	//
 	// It is what makes the handoff safe rather than probabilistic. drain() must
@@ -220,17 +227,40 @@ func (l *Listener) Start(ctx context.Context) error {
 
 // Close stops the worker and waits for in-flight work to finish.
 //
-// The handler is removed before the context is cancelled, and in that order on
-// purpose. Leaving it registered means whatsmeow keeps dispatching messages at
-// us for as long as the socket takes to tear down, and every one of those is a
-// note arriving at a listener that has no worker left to process it.
+// The context is cancelled first and the handler unregistered second, which is
+// the reverse of what it looks like it should be. An earlier version did it the
+// other way, reasoning that leaving the handler registered means whatsmeow keeps
+// dispatching notes at a listener with no worker left. That reasoning does not
+// hold: whatsmeow acks a message to the server as it decrypts it, so a note
+// arriving during teardown is already acked whether or not our handler is
+// listening. Unregistering first does not save it — it only makes it arrive
+// somewhere nobody is watching, with no row and no log. Cancelling first sends
+// it through enqueue's short-circuit instead, which records it as failed. The
+// user learns a voice note came in, which is the whole point.
+//
+// The old order was also a circular wait. RemoveEventHandler takes whatsmeow's
+// event-handler write lock, which dispatchEvent holds for the duration of any
+// in-flight handler, which may be blocked in enqueue on a full queue, whose only
+// escape is the cancellation that had not happened yet. Close could block for a
+// whole download plus probe plus delivery. Cancelling first releases that
+// immediately.
+//
+// Removal runs in its own goroutine because whatsmeow documents RemoveEventHandler
+// as deadlocking when called from inside an event handler, and the most natural
+// wiring for this package — OnState(LoggedOut) calling Close — is exactly that
+// case. Close therefore starts the removal rather than completing it. Anything
+// dispatched in the gap is handled deterministically by the same short-circuit.
 func (l *Listener) Close() error {
 	l.once.Do(func() {
-		if l.Client != nil && l.handlerID != 0 {
-			l.Client.RemoveEventHandler(l.handlerID)
-		}
 		if l.cancel != nil {
 			l.cancel()
+		}
+		if l.Client != nil && l.handlerID != 0 {
+			l.removeWG.Add(1)
+			go func() {
+				defer l.removeWG.Done()
+				l.Client.RemoveEventHandler(l.handlerID)
+			}()
 		}
 		l.wg.Wait()
 	})
@@ -420,12 +450,20 @@ func (l *Listener) deliver(ctx context.Context, n VoiceNote) {
 }
 
 // deliverFailed records a note whose audio is gone. It gets deliveryTimeout
-// rather than drainGrace even on the shutdown path, because it still performs
+// rather than drainGrace even on the teardown path, because it still performs
 // the same two database writes against the same busy_timeout(5000) as a
 // successful delivery, and losing the row to lock contention would leave the
 // user with no trace of a note they can neither read nor hear. drain() is the
 // one exception: it passes its own, shorter context, because it is bounding a
 // whole loop rather than a single note.
+//
+// The cost of that choice, since it is not obvious: both calls in enqueue run on
+// whatsmeow's node handler goroutine, so a wedged sink stalls node processing for
+// up to deliveryTimeout rather than drainGrace — 90 seconds instead of 5. That is
+// still inside whatsmeow's own five-minute tolerance, and the alternative is
+// discarding the one record of a note that cannot be recovered, so the trade is
+// deliberate. It is only reachable when the sink itself is hung; an ordinary
+// database write returns in milliseconds.
 func (l *Listener) deliverFailed(n VoiceNote, reason string) {
 	ctx, cancel := freshDeliveryContext(deliveryTimeout)
 	defer cancel()

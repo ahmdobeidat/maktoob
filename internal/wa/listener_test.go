@@ -434,10 +434,48 @@ func TestCloseRemovesTheEventHandler(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Close starts the removal rather than completing it: whatsmeow deadlocks if
+	// RemoveEventHandler runs inside an event handler, and OnState(LoggedOut)
+	// calling Close is exactly that shape. Wait for the goroutine it started.
+	//
+	// Polling client.RemoveEventHandler instead would prove nothing — the call is
+	// destructive, so the first poll removes the handler itself and the second
+	// reports false whether or not Close ever did anything.
+	l.removeWG.Wait()
+
 	// RemoveEventHandler reports whether it found the id. False here means Close
 	// already removed it, which is the whole claim.
 	if client.RemoveEventHandler(l.handlerID) {
 		t.Fatal("the handler was still registered after Close")
+	}
+}
+
+// The ordering in Close is load-bearing and easy to reverse by accident, since
+// unregistering first reads as the tidier thing to do. It is not: whatsmeow acks
+// a message as it decrypts it, so a note arriving during teardown is already
+// acked either way, and unregistering first only means it lands somewhere nobody
+// is watching. Cancelling first routes it through enqueue's short-circuit and it
+// gets recorded.
+//
+// This asserts the observable half of that — the context is cancelled by the time
+// Close returns. The other half, that the old order could block Close for a whole
+// download through a circular wait on whatsmeow's event-handler lock, needs a live
+// dispatchEvent holding that lock and cannot be reproduced here.
+func TestCloseCancelsBeforeItReturns(t *testing.T) {
+	l := &Listener{
+		Down: fakeDownloader{data: []byte("a")},
+		Sink: newFakeSink(),
+		Salt: testSalt(t),
+	}
+	if err := l.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if l.ctx.Err() == nil {
+		t.Fatal("Close returned without cancelling; a note arriving now would be dropped rather than recorded")
 	}
 }
 
