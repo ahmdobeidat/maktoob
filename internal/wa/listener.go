@@ -62,6 +62,17 @@ func freshDeliveryContext(timeout time.Duration) (context.Context, context.Cance
 	return context.WithTimeout(context.Background(), timeout)
 }
 
+// Reasons recorded against a note whose audio never made it to disk.
+//
+// They are written into notes.error, which is rendered to the user in place of
+// a transcript. The reader is deaf and cannot fall back to playing the audio, so
+// this string is the entire explanation they get: it has to be a sentence about
+// what happened, not an internal error value.
+const (
+	reasonNotQueued     = "shut down before the note could be queued"
+	reasonNotDownloaded = "shut down before the audio was downloaded"
+)
+
 // maxMediaBytes rejects an implausible declared media length before download.
 // The field is supplied by the peer, so it is not trustworthy input.
 const maxMediaBytes = 64 << 20
@@ -148,11 +159,24 @@ type Listener struct {
 	Salt    Salt
 	Log     *slog.Logger
 
-	jobs   chan job
-	ctx    context.Context
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
-	once   sync.Once
+	jobs      chan job
+	ctx       context.Context
+	cancel    context.CancelFunc
+	wg        sync.WaitGroup
+	once      sync.Once
+	handlerID uint32
+
+	// mu guards closed, and is held across enqueue's send to l.jobs.
+	//
+	// It is what makes the handoff safe rather than probabilistic. drain() must
+	// set closed before it starts emptying the channel, and it can only take mu
+	// once every in-flight enqueue has either completed its send or given up.
+	// So a job that made it into the channel is guaranteed to be visible to the
+	// drain loop, and a job that did not is guaranteed to see closed and record
+	// itself as failed. Without that ordering, drain()'s default: arm can exit a
+	// microsecond before a send lands and strand the note with no trace.
+	mu     sync.Mutex
+	closed bool
 }
 
 // Start registers the event handler and starts the worker. It does not block.
@@ -174,14 +198,22 @@ func (l *Listener) Start(ctx context.Context) error {
 	go l.run()
 
 	if l.Client != nil {
-		l.Client.AddEventHandler(l.onEvent)
+		l.handlerID = l.Client.AddEventHandler(l.onEvent)
 	}
 	return nil
 }
 
 // Close stops the worker and waits for in-flight work to finish.
+//
+// The handler is removed before the context is cancelled, and in that order on
+// purpose. Leaving it registered means whatsmeow keeps dispatching messages at
+// us for as long as the socket takes to tear down, and every one of those is a
+// note arriving at a listener that has no worker left to process it.
 func (l *Listener) Close() error {
 	l.once.Do(func() {
+		if l.Client != nil && l.handlerID != 0 {
+			l.Client.RemoveEventHandler(l.handlerID)
+		}
 		if l.cancel != nil {
 			l.cancel()
 		}
@@ -246,12 +278,28 @@ func (l *Listener) enqueue(evt *events.Message) {
 		j.note.ChatName = evt.Info.PushName
 	}
 
+	// The short-circuit is not an optimisation. Once l.ctx is cancelled and the
+	// worker has returned, both arms of the select below are ready — l.jobs still
+	// has capacity and Done() is closed — and Go picks between ready arms
+	// uniformly at random. Half the notes arriving in that window would be
+	// written into a buffer nobody will ever read again: no log, no failed row,
+	// nothing the user could ever learn from. Checking first makes the outcome
+	// deterministic.
+	l.mu.Lock()
+	if l.closed || l.ctx.Err() != nil {
+		l.mu.Unlock()
+		l.deliverFailed(j.note, reasonNotQueued)
+		return
+	}
+
 	select {
 	case l.jobs <- j:
+		l.mu.Unlock()
 	case <-l.ctx.Done():
+		l.mu.Unlock()
 		// Cancelled while the queue was full. Record it rather than dropping it:
 		// whatsmeow already acked this message, so nothing will redeliver it.
-		l.deliverFailed(j.note, "shut down before the note could be queued")
+		l.deliverFailed(j.note, reasonNotQueued)
 	}
 }
 
@@ -269,19 +317,31 @@ func (l *Listener) run() {
 	}
 }
 
-// drain records everything still queued at shutdown.
+// drain records everything still queued at teardown.
 //
 // Without this, every job in the channel at Ctrl-C is lost silently: whatsmeow
 // acked each of them on arrival, so WhatsApp will not send them again, and the
 // user has no way to learn they existed.
+//
+// closed is set under l.mu before the loop starts, which is what makes the
+// default: arm below safe to exit on. Taking l.mu means every enqueue that was
+// mid-send has finished, so anything it sent is already in the channel and this
+// loop will see it; and every enqueue that arrives afterwards will observe
+// closed and record its own note instead of sending into a channel with no
+// reader. A bare default: without that ordering strands any job whose send
+// lands a moment after the loop gives up.
 func (l *Listener) drain() {
+	l.mu.Lock()
+	l.closed = true
+	l.mu.Unlock()
+
 	ctx, cancel := freshDeliveryContext(drainGrace)
 	defer cancel()
 
 	for {
 		select {
 		case j := <-l.jobs:
-			l.deliverFailedCtx(ctx, j.note, "shut down before the audio was downloaded")
+			l.deliverFailedCtx(ctx, j.note, reasonNotDownloaded)
 		default:
 			return
 		}

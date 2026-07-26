@@ -3,6 +3,7 @@ package wa
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"sync"
@@ -271,6 +272,88 @@ func TestLoggedOutReportsStateAndStops(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("no state reported")
+	}
+}
+
+// TestNoteArrivingAfterCloseIsStillRecorded pins down the window between
+// cancellation and the socket actually tearing down.
+//
+// enqueue's select used to be reached unconditionally. Once l.ctx was cancelled
+// and the worker had returned, both arms were ready — l.jobs still had capacity
+// and Done() was closed — so Go chose between them uniformly at random and
+// roughly half of these notes were written into a buffer with no reader left,
+// with no log and no failed row. Twenty notes make a coin-flip regression fail
+// with probability 1 - 2^-20 rather than intermittently.
+func TestNoteArrivingAfterCloseIsStillRecorded(t *testing.T) {
+	const notes = 20
+
+	sink := newFakeSink()
+	l := &Listener{Down: fakeDownloader{data: []byte("a")}, Sink: sink, Salt: testSalt(t)}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := l.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	dm := types.JID{User: "962790000000", Server: types.DefaultUserServer}
+	for i := 0; i < notes; i++ {
+		m := message(dm, audioPTT())
+		m.Info.ID = fmt.Sprintf("3EB0%04d", i)
+		l.onEvent(m)
+	}
+	sink.wait(t, notes)
+
+	got := sink.notes()
+	if len(got) != notes {
+		t.Fatalf("got %d notes after Close, want %d", len(got), notes)
+	}
+	for i, n := range got {
+		if n.DownloadErr == "" {
+			t.Fatalf("note %d has no reason explaining the missing audio", i)
+		}
+		if n.SenderAlias == "" || n.DedupeKey == "" {
+			t.Fatalf("note %d lost its metadata", i)
+		}
+	}
+	for i, err := range sink.ctxErrors() {
+		if err != nil {
+			t.Fatalf("note %d delivered with an already-cancelled context: %v", i, err)
+		}
+	}
+}
+
+// Close must unregister from whatsmeow, not merely cancel. A handler left
+// registered keeps receiving messages for as long as the socket takes to tear
+// down, and every one of those arrives at a listener with no worker.
+func TestCloseRemovesTheEventHandler(t *testing.T) {
+	client := &whatsmeow.Client{}
+	l := &Listener{
+		Client: client,
+		Down:   fakeDownloader{data: []byte("a")},
+		Sink:   newFakeSink(),
+		Salt:   testSalt(t),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := l.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if l.handlerID == 0 {
+		t.Fatal("Start discarded the handler id, so Close cannot unregister")
+	}
+	if err := l.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// RemoveEventHandler reports whether it found the id. False here means Close
+	// already removed it, which is the whole claim.
+	if client.RemoveEventHandler(l.handlerID) {
+		t.Fatal("the handler was still registered after Close")
 	}
 }
 
