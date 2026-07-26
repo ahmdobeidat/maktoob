@@ -391,3 +391,100 @@ func TestMetaRoundTrip(t *testing.T) {
 		t.Fatalf("got %q, want %q", got, "def")
 	}
 }
+
+func TestCreateNoteHonoursStatus(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	if err := st.UpsertChat(ctx, "c1", "Chat"); err != nil {
+		t.Fatal(err)
+	}
+
+	ok, err := st.CreateNote(ctx, Note{
+		ID: "n1", ChatID: "c1", Source: "whatsapp",
+		Sender: "alias1", SenderName: "Um Ahmad",
+		WAMessageID: "k1", MediaPath: "", ReceivedAt: time.Now(),
+		Status: StatusFailed, Error: "download failed",
+	})
+	if err != nil || !ok {
+		t.Fatalf("create: ok=%v err=%v", ok, err)
+	}
+
+	note, _, err := st.GetNote(ctx, "n1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if note.Status != StatusFailed {
+		t.Fatalf("status: got %q, want %q", note.Status, StatusFailed)
+	}
+	if note.SenderName != "Um Ahmad" {
+		t.Fatalf("sender_name: got %q", note.SenderName)
+	}
+}
+
+func TestCreateNoteDefaultsToPending(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	if err := st.UpsertChat(ctx, "c1", "Chat"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := st.CreateNote(ctx, Note{
+		ID: "n1", ChatID: "c1", Source: "import",
+		MediaPath: "/tmp/a.ogg", ReceivedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	note, _, err := st.GetNote(ctx, "n1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if note.Status != StatusPending {
+		t.Fatalf("status: got %q, want %q", note.Status, StatusPending)
+	}
+}
+
+func TestClaimNextSkipsMediaLessNotes(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	if err := st.UpsertChat(ctx, "c1", "Chat"); err != nil {
+		t.Fatal(err)
+	}
+
+	// A pending note with no media must never be claimed, however it got there.
+	if _, err := st.CreateNote(ctx, Note{
+		ID: "bad", ChatID: "c1", Source: "whatsapp", WAMessageID: "k1",
+		MediaPath: "", ReceivedAt: time.Now(), Status: StatusPending,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := st.ClaimNext(ctx); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("want ErrNotFound, got %v", err)
+	}
+}
+
+func TestNoteIDByWAMessageID(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	if err := st.UpsertChat(ctx, "c1", "Chat"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateNote(ctx, Note{
+		ID: "n1", ChatID: "c1", Source: "whatsapp", WAMessageID: "k1",
+		MediaPath: "/tmp/a.ogg", ReceivedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := st.NoteIDByWAMessageID(ctx, "k1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "n1" {
+		t.Fatalf("got %q, want n1", got)
+	}
+	if _, err := st.NoteIDByWAMessageID(ctx, "nope"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("want ErrNotFound, got %v", err)
+	}
+}
