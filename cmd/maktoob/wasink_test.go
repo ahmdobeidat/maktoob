@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -77,5 +79,36 @@ func TestWAIngestRequestMarksFailedDownload(t *testing.T) {
 	}
 	if req.Error != "410 gone" {
 		t.Fatalf("error text: %q", req.Error)
+	}
+}
+
+func TestCheckSaltDetectsASwappedSalt(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	first, err := wa.LoadSalt(filepath.Join(t.TempDir(), "salt-a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// First run records the fingerprint.
+	if err := checkSalt(ctx, st, first); err != nil {
+		t.Fatal(err)
+	}
+	// Same salt, same database: fine.
+	if err := checkSalt(ctx, st, first); err != nil {
+		t.Fatal(err)
+	}
+
+	second, err := wa.LoadSalt(filepath.Join(t.TempDir(), "salt-b"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A different salt against the same database silently forks every chat.
+	if err := checkSalt(ctx, st, second); err == nil {
+		t.Fatal("a swapped salt was accepted")
 	}
 }

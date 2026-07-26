@@ -17,6 +17,8 @@ Usage:
   maktoob import <file>...   transcribe audio files
   maktoob list               show stored notes
   maktoob show <id>          show one transcript
+  maktoob pair               link a WhatsApp device by scanning a QR code
+  maktoob logout             unlink the device (transcripts are untouched)
 
 Flags:
   -data   directory for media, database and session state (default "data")
@@ -76,6 +78,10 @@ func run(args []string) error {
 			return fmt.Errorf("show requires exactly one note id")
 		}
 		return cmdShow(ctx, cfg, fs.Arg(0))
+	case "pair":
+		return cmdPair(ctx, cfg)
+	case "logout":
+		return cmdLogout(ctx, cfg)
 	case "help", "-h", "--help":
 		fmt.Print(usage)
 		return nil
@@ -91,8 +97,10 @@ type config struct {
 	lang    string
 }
 
-func (c config) dbPath() string   { return filepath.Join(c.dataDir, "maktoob.db") }
-func (c config) mediaDir() string { return filepath.Join(c.dataDir, "media") }
+func (c config) dbPath() string      { return filepath.Join(c.dataDir, "maktoob.db") }
+func (c config) mediaDir() string    { return filepath.Join(c.dataDir, "media") }
+func (c config) sessionPath() string { return filepath.Join(c.dataDir, "session.db") }
+func (c config) saltPath() string    { return filepath.Join(c.dataDir, "salt") }
 
 // ensureDataDir creates the data directory with owner-only permissions.
 //
