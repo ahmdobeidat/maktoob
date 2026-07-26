@@ -188,6 +188,20 @@ func (l *Listener) Start(ctx context.Context) error {
 	if len(l.Salt) == 0 {
 		return fmt.Errorf("wa: Salt is required")
 	}
+	// Down is defaulted rather than only validated: *whatsmeow.Client is the
+	// only real implementation, and a caller that supplied a Client has already
+	// said which one to use. The interface exists for tests, not for choice.
+	//
+	// process() dereferences Down unconditionally on the worker goroutine, where
+	// a nil interface panics with nothing to recover it and takes the process
+	// down. Catching it here turns what would be a crash on the first voice note
+	// into a startup error the caller can read.
+	if l.Down == nil {
+		if l.Client == nil {
+			return fmt.Errorf("wa: Down or Client is required")
+		}
+		l.Down = l.Client
+	}
 	if l.Log == nil {
 		l.Log = slog.Default()
 	}

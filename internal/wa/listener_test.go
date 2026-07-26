@@ -119,6 +119,62 @@ func newTestListener(t *testing.T, sink Sink, down Downloader) (*Listener, conte
 	return l, cancel
 }
 
+// process() dereferences Down on the worker goroutine, where a nil interface
+// panics unrecovered and kills the process. Start validated Sink and Salt but
+// not Down, and every existing test set Down explicitly, so the first person to
+// wire up serve would have got a crash on their first voice note instead of an
+// error at startup.
+func TestStartResolvesTheDownloader(t *testing.T) {
+	t.Run("nil Down falls back to the client", func(t *testing.T) {
+		client := &whatsmeow.Client{}
+		l := &Listener{Client: client, Sink: newFakeSink(), Salt: testSalt(t)}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		if err := l.Start(ctx); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { l.Close() })
+
+		if l.Down == nil {
+			t.Fatal("Down is still nil, so the first note will panic the worker")
+		}
+		if l.Down != Downloader(client) {
+			t.Fatalf("Down is %T, want the client that was supplied", l.Down)
+		}
+	})
+
+	t.Run("no Down and no client is a startup error", func(t *testing.T) {
+		l := &Listener{Sink: newFakeSink(), Salt: testSalt(t)}
+
+		err := l.Start(context.Background())
+		if err == nil {
+			t.Fatal("Start accepted a listener with no way to download anything")
+		}
+		if !strings.Contains(err.Error(), "Down") {
+			t.Fatalf("error does not name the missing field: %v", err)
+		}
+	})
+
+	t.Run("an explicit Down is left alone", func(t *testing.T) {
+		// A pointer, so the comparison below is identity rather than a struct
+		// compare on a type that holds a slice.
+		down := &fakeDownloader{data: []byte("a")}
+		l := &Listener{Client: &whatsmeow.Client{}, Down: down, Sink: newFakeSink(), Salt: testSalt(t)}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		if err := l.Start(ctx); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { l.Close() })
+
+		if l.Down != Downloader(down) {
+			t.Fatalf("Start replaced an explicitly supplied Down with %T", l.Down)
+		}
+	})
+}
+
 func TestAcceptedNoteReachesTheSink(t *testing.T) {
 	sink := newFakeSink()
 	l, _ := newTestListener(t, sink, fakeDownloader{data: []byte("audio")})
