@@ -3,6 +3,7 @@ package wa
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -356,11 +357,11 @@ func (l *Listener) process(ctx context.Context, j job) {
 		// chance to take, so record the arrival and move on.
 		//
 		// ctx (the download context) is not used for delivery below: if this
-		// error is ctx.Err() because the listener is shutting down, ctx is
-		// already cancelled, and delivery needs its own uncancelled window. See
+		// error is ctx.Err() because the listener is stopping, ctx is already
+		// cancelled, and delivery needs its own uncancelled window. See
 		// freshDeliveryContext.
 		l.Log.Warn("voice note download failed", "error", err)
-		l.deliverFailed(j.note, err.Error())
+		l.deliverFailed(j.note, downloadFailureReason(err))
 		return
 	}
 
@@ -369,6 +370,24 @@ func (l *Listener) process(ctx context.Context, j job) {
 	dctx, cancel := freshDeliveryContext(deliveryTimeout)
 	defer cancel()
 	l.deliver(dctx, j.note)
+}
+
+// downloadFailureReason turns a download error into the sentence stored on the
+// note.
+//
+// run()'s select is random when a job is queued and the context is cancelled at
+// the same moment, so the worker can start a download it is about to abandon.
+// Download then returns context.Canceled, and the raw error string would be
+// written verbatim into notes.error. "context canceled" is the entire
+// explanation a deaf user gets next to a note they cannot play — a Go runtime
+// value standing in for the product's core surface at the worst possible time.
+// It is the same event drain() already describes in words, so it gets the same
+// words.
+func downloadFailureReason(err error) string {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return reasonNotDownloaded
+	}
+	return err.Error()
 }
 
 func (l *Listener) deliver(ctx context.Context, n VoiceNote) {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -205,6 +206,33 @@ func TestFailedDownloadIsRecordedNotDropped(t *testing.T) {
 	}
 	if got.SenderAlias == "" || got.DedupeKey == "" {
 		t.Fatal("metadata must survive a failed download")
+	}
+}
+
+// notes.error is rendered to the user in place of a transcript, and the user
+// cannot play the audio to find out what happened. A cancelled download must
+// therefore read as a sentence, not as the Go runtime's error value.
+func TestCancelledDownloadIsReportedInWords(t *testing.T) {
+	cases := map[string]struct {
+		err  error
+		want string
+	}{
+		"cancelled":        {context.Canceled, reasonNotDownloaded},
+		"deadline":         {context.DeadlineExceeded, reasonNotDownloaded},
+		"wrapped cancel":   {fmt.Errorf("download media: %w", context.Canceled), reasonNotDownloaded},
+		"real CDN failure": {errors.New("410 gone"), "410 gone"},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got := downloadFailureReason(tc.err)
+			if got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+			if strings.Contains(got, "context canceled") {
+				t.Fatalf("a Go error value reached the user: %q", got)
+			}
+		})
 	}
 }
 
