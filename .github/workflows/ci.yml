@@ -28,6 +28,25 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: Check package boundaries
+        run: |
+          # go list -deps includes the named package itself, so internal/wa is
+          # filtered out of its own dependency list. Without that the check
+          # fails against a clean tree and gets deleted by whoever it blocks.
+          if go list -deps ./internal/wa | grep 'maktoob/internal/' \
+               | grep -qv '^github.com/ahmdobeidat/maktoob/internal/wa$'; then
+            echo "internal/wa must not import other maktoob packages."
+            echo "It reaches the rest of the app through the Sink interface only."
+            go list -deps ./internal/wa | grep 'maktoob/internal/' \
+              | grep -v '^github.com/ahmdobeidat/maktoob/internal/wa$'
+            exit 1
+          fi
+          if go list -deps ./internal/pipeline | grep -q 'maktoob/internal/wa'; then
+            echo "internal/pipeline must not import internal/wa."
+            echo "The adapter belongs in cmd/maktoob so the dependency points outward."
+            exit 1
+          fi
+
       - name: Test
         run: go test -race ./...
 
