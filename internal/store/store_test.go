@@ -351,6 +351,17 @@ func TestOpenAddsSenderNameToExistingDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A row written before the migration. The point of the migration is that an
+	// existing installation survives it, and an empty database cannot show that:
+	// it proves the column appears, not that a user's transcripts are still there
+	// afterwards. This is the assertion that would fail if migrate ever grew into
+	// a table rebuild.
+	_, err = raw.Exec(`
+		INSERT INTO notes (id, chat_id, source, media_path, received_at, status)
+		VALUES ('n1', 'c1', 'import', '/tmp/a.ogg', 1700000000000, 'done')`)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := raw.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -363,6 +374,21 @@ func TestOpenAddsSenderNameToExistingDatabase(t *testing.T) {
 
 	if _, err := st.db.Exec(`SELECT sender_name FROM notes LIMIT 1`); err != nil {
 		t.Fatalf("sender_name missing after migration: %v", err)
+	}
+
+	var id, status string
+	var senderName sql.NullString
+	err = st.db.QueryRow(
+		`SELECT id, status, sender_name FROM notes WHERE id = 'n1'`).
+		Scan(&id, &status, &senderName)
+	if err != nil {
+		t.Fatalf("the pre-existing row did not survive the migration: %v", err)
+	}
+	if status != "done" {
+		t.Fatalf("status: got %q, want the value written before migrating", status)
+	}
+	if senderName.Valid {
+		t.Fatalf("sender_name on a pre-existing row: got %q, want NULL", senderName.String)
 	}
 }
 
@@ -462,6 +488,26 @@ func TestClaimNextSkipsMediaLessNotes(t *testing.T) {
 
 	if _, err := st.ClaimNext(ctx); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("want ErrNotFound, got %v", err)
+	}
+
+	// The guard must skip the bad row rather than stop at it. A media-less note
+	// is older here, so a guard that halted the scan instead of filtering it
+	// would starve every real note queued behind it — the queue is ordered
+	// oldest-first, and one failed download would stall transcription for good.
+	if _, err := st.CreateNote(ctx, Note{
+		ID: "good", ChatID: "c1", Source: "whatsapp", WAMessageID: "k2",
+		MediaPath: "/tmp/a.ogg", ReceivedAt: time.Now().Add(time.Minute),
+		Status: StatusPending,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	claimed, err := st.ClaimNext(ctx)
+	if err != nil {
+		t.Fatalf("a good note behind a media-less one was not claimed: %v", err)
+	}
+	if claimed.ID != "good" {
+		t.Fatalf("claimed %q, want the note that has media", claimed.ID)
 	}
 }
 

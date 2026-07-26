@@ -37,4 +37,5 @@ differ from maktoob's and continue to apply to their respective code.
     Voice activity detection model, loaded by whisper.cpp at runtime.
 
 Whisper models (ggml format) are distributed by the whisper.cpp project and
-are not redistributed here; scripts/setup.sh fetches them at install time.
+are not redistributed here. They are downloaded from that project separately;
+see the README for the current instructions.

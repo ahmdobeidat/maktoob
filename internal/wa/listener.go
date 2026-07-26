@@ -108,6 +108,11 @@ type VoiceNote struct {
 // in cmd/maktoob, so the dependency arrow only ever points out of this package.
 // Implementing it downstream would reverse that arrow and make this package
 // impossible to delete, which is the one property it exists to have.
+//
+// Implementations must be safe for concurrent use. Ingest is normally called
+// from the single worker goroutine, but a handler that cannot queue a note
+// records it directly, so a call from whatsmeow's node handler can overlap one
+// already in flight on the worker.
 type Sink interface {
 	Ingest(ctx context.Context, n VoiceNote) error
 }

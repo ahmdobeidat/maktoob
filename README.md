@@ -124,17 +124,17 @@ Requires Go 1.25+, `ffmpeg`, and a built `whisper-server` from whisper.cpp.
 # system dependencies (Debian/Ubuntu)
 sudo apt-get install -y cmake ffmpeg
 
-# build whisper.cpp and fetch models
-./scripts/setup.sh              # not written yet, see below
-
 # build maktoob
 go build ./cmd/maktoob
 ```
 
-`scripts/setup.sh` and a full `docs/INSTALL.md` covering the CPU/GPU decision and
-expected transcription latency are still to be written. Until then, build
-whisper.cpp and fetch a model per that project's own instructions, and point
-maktoob at the running server with `-asr`.
+Then build `whisper-server` and fetch a model per whisper.cpp's own
+instructions, start it, and point maktoob at it with `-asr`.
+
+A `scripts/setup.sh` that does the whisper.cpp build and model download in one
+step, and a `docs/INSTALL.md` covering the CPU/GPU decision and expected
+transcription latency, are still to be written. Neither exists yet, so nothing
+above tells you to run them.
 
 ## Usage
 

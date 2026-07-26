@@ -2,10 +2,15 @@ package main
 
 import (
 	"context"
+	"io"
+	"log/slog"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/ahmdobeidat/maktoob/internal/pipeline"
 	"github.com/ahmdobeidat/maktoob/internal/store"
 	"github.com/ahmdobeidat/maktoob/internal/wa"
 )
@@ -90,25 +95,91 @@ func TestCheckSaltDetectsASwappedSalt(t *testing.T) {
 	}
 	defer st.Close()
 
-	first, err := wa.LoadSalt(filepath.Join(t.TempDir(), "salt-a"))
+	pathA := filepath.Join(t.TempDir(), "salt-a")
+	first, err := wa.LoadSalt(pathA)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// First run records the fingerprint.
-	if err := checkSalt(ctx, st, first); err != nil {
+	if err := checkSalt(ctx, st, first, pathA); err != nil {
 		t.Fatal(err)
 	}
 	// Same salt, same database: fine.
-	if err := checkSalt(ctx, st, first); err != nil {
+	if err := checkSalt(ctx, st, first, pathA); err != nil {
 		t.Fatal(err)
 	}
 
-	second, err := wa.LoadSalt(filepath.Join(t.TempDir(), "salt-b"))
+	pathB := filepath.Join(t.TempDir(), "salt-b")
+	second, err := wa.LoadSalt(pathB)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// A different salt against the same database silently forks every chat.
-	if err := checkSalt(ctx, st, second); err == nil {
+	err = checkSalt(ctx, st, second, pathB)
+	if err == nil {
 		t.Fatal("a swapped salt was accepted")
+	}
+	// The message has to name the file the user actually has. Hardcoding
+	// "data/salt" sends anyone running with -data to a path that is not theirs,
+	// at the moment they are being told their transcripts may be unreachable.
+	if !strings.Contains(err.Error(), pathB) {
+		t.Fatalf("error names no usable path, got: %v", err)
+	}
+}
+
+// newWASink is the seam between two packages forbidden to know about each other,
+// and until now only waIngestRequest was covered — the closure itself, including
+// how it treats a duplicate delivery, was exercised only by the type system.
+func TestNewWASinkRecordsAndToleratesDuplicates(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	st, err := store.Open(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	pl := &pipeline.Pipeline{
+		Store:     st,
+		Converter: stubConverter{},
+		MediaDir:  filepath.Join(dir, "media"),
+	}
+	sink := newWASink(pl, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	note := wa.VoiceNote{
+		ChatAlias: "chat-alias", ChatName: "Family",
+		SenderAlias: "sender-alias", SenderName: "Um Ahmad",
+		DedupeKey: "dedupe-1", ReceivedAt: time.Now(),
+		DurationHint: 7000, Ext: ".ogg",
+		Audio: strings.NewReader("audio"),
+	}
+
+	if err := sink.Ingest(ctx, note); err != nil {
+		t.Fatalf("first delivery: %v", err)
+	}
+
+	// A reconnect redelivers the same message. That is expected traffic, so the
+	// sink must not surface it as an error, and it must not leave a second note
+	// or a second media file behind.
+	note.Audio = strings.NewReader("audio")
+	if err := sink.Ingest(ctx, note); err != nil {
+		t.Fatalf("duplicate delivery reported an error: %v", err)
+	}
+
+	notes, err := st.ListNotes(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != 1 {
+		t.Fatalf("got %d notes after a duplicate delivery, want 1", len(notes))
+	}
+
+	entries, err := os.ReadDir(pl.MediaDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("got %d media files, want 1 — the duplicate orphaned one", len(entries))
 	}
 }

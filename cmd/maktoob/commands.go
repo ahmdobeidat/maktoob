@@ -36,7 +36,7 @@ func open(ctx context.Context, cfg config) (*store.Store, *pipeline.Pipeline, er
 		st.Close()
 		return nil, nil, err
 	}
-	if err := checkSalt(ctx, st, salt); err != nil {
+	if err := checkSalt(ctx, st, salt, cfg.saltPath()); err != nil {
 		st.Close()
 		return nil, nil, err
 	}
@@ -196,7 +196,11 @@ const saltFingerprintKey = "alias-salt-fingerprint"
 // loudly: every chat quietly forks into a new row, the old rows keep their
 // display names, and the user sees each conversation twice with nothing to
 // explain it. Catching it here turns a silent data problem into a startup error.
-func checkSalt(ctx context.Context, st *store.Store, salt wa.Salt) error {
+//
+// saltPath is passed in rather than hardcoded because -data moves it. Naming a
+// path the user does not have, at the moment they are being told their data may
+// be unreachable, is the least helpful thing this message could do.
+func checkSalt(ctx context.Context, st *store.Store, salt wa.Salt, saltPath string) error {
 	want := salt.Fingerprint()
 
 	got, err := st.GetMeta(ctx, saltFingerprintKey)
@@ -208,9 +212,10 @@ func checkSalt(ctx context.Context, st *store.Store, salt wa.Salt) error {
 	}
 	if got != want {
 		return fmt.Errorf(
-			"the alias salt does not match this database: data/salt has been replaced or lost.\n" +
-				"Restore the original data/salt, or start a new database, " +
-				"because chats aliased under a different salt cannot be matched to the existing ones")
+			"the alias salt does not match this database: %s has been replaced or lost.\n"+
+				"Restore the original %s, or start a new database, "+
+				"because chats aliased under a different salt cannot be matched to the existing ones",
+			saltPath, saltPath)
 	}
 	return nil
 }
