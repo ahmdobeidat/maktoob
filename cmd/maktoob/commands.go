@@ -242,6 +242,6 @@ func cmdLogout(ctx context.Context, cfg config) error {
 		return err
 	}
 
-	fmt.Println("Unlinked. Your transcripts are untouched; use `maktoob purge` to delete them.")
+	fmt.Println("Unlinked. Transcripts already stored on this machine are untouched.")
 	return nil
 }
