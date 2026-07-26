@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -26,6 +27,16 @@ func newTestStore(t *testing.T) *Store {
 	}
 	t.Cleanup(func() { s.Close() })
 	return s
+}
+
+func openTestStore(t *testing.T) *Store {
+	t.Helper()
+	st, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	return st
 }
 
 func seedNote(t *testing.T, s *Store, id string) Note {
@@ -320,4 +331,73 @@ func (s *Store) countMatches(ctx context.Context, userQuery string) (int, error)
 	err := s.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM segments_fts WHERE segments_fts MATCH ?`, q).Scan(&n)
 	return n, err
+}
+
+func TestOpenAddsSenderNameToExistingDatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old.db")
+
+	// Build a database shaped the way D1 left it: notes without sender_name.
+	raw, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = raw.Exec(`
+		CREATE TABLE notes (
+		  id            TEXT PRIMARY KEY,
+		  chat_id       TEXT NOT NULL,
+		  source        TEXT NOT NULL,
+		  sender        TEXT,
+		  wa_message_id TEXT UNIQUE,
+		  media_path    TEXT NOT NULL,
+		  wav_path      TEXT,
+		  duration_ms   INTEGER NOT NULL DEFAULT 0,
+		  received_at   INTEGER NOT NULL,
+		  status        TEXT NOT NULL,
+		  attempts      INTEGER NOT NULL DEFAULT 0,
+		  error         TEXT,
+		  model         TEXT
+		)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open on an existing database: %v", err)
+	}
+	defer st.Close()
+
+	if _, err := st.db.Exec(`SELECT sender_name FROM notes LIMIT 1`); err != nil {
+		t.Fatalf("sender_name missing after migration: %v", err)
+	}
+}
+
+func TestMetaRoundTrip(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+
+	if _, err := st.GetMeta(ctx, "salt-check"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("absent key: want ErrNotFound, got %v", err)
+	}
+	if err := st.SetMeta(ctx, "salt-check", "abc"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.GetMeta(ctx, "salt-check")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "abc" {
+		t.Fatalf("got %q, want %q", got, "abc")
+	}
+
+	// Overwrite must replace, not conflict.
+	if err := st.SetMeta(ctx, "salt-check", "def"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = st.GetMeta(ctx, "salt-check"); got != "def" {
+		t.Fatalf("got %q, want %q", got, "def")
+	}
 }
