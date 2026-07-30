@@ -1,0 +1,88 @@
+{
+  "_readme": "REPLACE THE TEXT. Copy this file to scripts/seed/fixture.json and rewrite every \"text\" and \"edited\" value in Arabic. The English below is placeholder: it exists to show the shape and to exercise every state the interface can render, not to be demoed. You can leave this _readme key in place; the loader ignores it.",
+
+  "chats": [
+    {
+      "id": "chat-family",
+      "name": "Family",
+      "notes": [
+        {
+          "sender": "Umm Ahmad",
+          "minutes_ago": 4,
+          "segments": [
+            {
+              "start_ms": 0,
+              "end_ms": 3200,
+              "text": "A clean, high confidence line. Nothing is marked on this one.",
+              "confidence": 0.96
+            },
+            {
+              "start_ms": 3200,
+              "end_ms": 7400,
+              "text": "A second clean line so the note reads as a real message.",
+              "confidence": 0.93
+            }
+          ]
+        },
+        {
+          "sender": "Umm Ahmad",
+          "minutes_ago": 41,
+          "segments": [
+            {
+              "start_ms": 0,
+              "end_ms": 2600,
+              "text": "This line was mumbled and the model was unsure.",
+              "confidence": 0.22
+            },
+            {
+              "start_ms": 2600,
+              "end_ms": 6100,
+              "text": "This is the raw machine output, kept even after correction.",
+              "edited": "This is the human correction that replaced it.",
+              "confidence": 0.71
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "chat-work",
+      "name": "Work",
+      "notes": [
+        {
+          "sender": "Ziad",
+          "minutes_ago": 130,
+          "segments": [
+            {
+              "start_ms": 0,
+              "end_ms": 4000,
+              "text": "An ordinary work message.",
+              "confidence": 0.94
+            },
+            {
+              "start_ms": 4000,
+              "end_ms": 9000,
+              "text": "Thank you for watching. Please subscribe to the channel.",
+              "confidence": 0.97,
+              "suspect": true,
+              "no_speech_prob": 0.94
+            }
+          ]
+        },
+        {
+          "sender": "Ziad",
+          "minutes_ago": 300,
+          "status": "no_speech",
+          "segments": []
+        },
+        {
+          "sender": "Ziad",
+          "minutes_ago": 420,
+          "status": "failed",
+          "error": "media download failed: file no longer available",
+          "segments": []
+        }
+      ]
+    }
+  ]
+}

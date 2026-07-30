@@ -114,7 +114,7 @@ func seam(t *testing.T, down wa.Downloader) (*store.Store, *wa.Listener, string,
 	// forwards to newWASink rather than reimplementing it, so the mapping under
 	// test is the one the binary uses.
 	delivered := make(chan error, 4)
-	adapter := newWASink(pl, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	adapter := newWASink(pl, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 	sink := wa.SinkFunc(func(ctx context.Context, n wa.VoiceNote) error {
 		err := adapter(ctx, n)
 		delivered <- err

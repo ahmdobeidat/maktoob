@@ -1,0 +1,107 @@
+{{define "content"}}
+
+<p><a class="back-link" href="/">{{.Loc.BackToList}}</a></p>
+
+<h1>{{.Loc.NoteHeading}}</h1>
+
+<dl class="note-facts">
+  <dt>{{.Loc.From}}</dt><dd><bdi>{{.Note.Sender}}</bdi></dd>
+  <dt>{{.Loc.InChat}}</dt><dd><bdi>{{.Note.Chat}}</bdi></dd>
+  <dt>{{.Loc.Received}}</dt>
+  <dd><time datetime="{{.Note.ReceivedISO}}" dir="ltr">{{.Note.Received}}</time></dd>
+  <dt>{{.Loc.Length}}</dt><dd dir="ltr">{{.Note.Duration}}</dd>
+  <dt>{{.Loc.Status}}</dt>
+  <dd>
+    <span class="status status-{{.Note.Status}}">{{.Note.StatusLabel}}</span>
+    {{if .Note.Error}}<span class="note-error"><bdi>{{.Note.Error}}</bdi></span>{{end}}
+  </dd>
+</dl>
+
+<!--
+  data-note-id lets the event stream tell whether an update concerns this page.
+  A finished transcript for a different note must not reload what the user is
+  currently reading.
+-->
+<div class="player" data-note-id="{{.Note.ID}}">
+  {{if .HasAudio}}
+    <audio id="player" controls preload="metadata"
+           src="/api/notes/{{.Note.ID}}/audio"></audio>
+  {{else}}
+    <p class="empty">{{.Loc.AudioMissing}}</p>
+  {{end}}
+</div>
+
+<h2 id="transcript-heading">{{.Loc.Transcript}}</h2>
+
+{{if .Segments}}
+
+  <p class="legend">{{.Loc.MarksLegend}}</p>
+
+  <!--
+    The transcript is the one region that is Arabic regardless of the interface
+    language, so it carries its own lang and dir rather than inheriting the
+    chrome's.
+  -->
+  <ol class="segments" id="segments" lang="ar" dir="rtl"
+      aria-labelledby="transcript-heading">
+    {{range .Segments}}
+      <li class="segment{{if .Suspect}} is-suspect{{end}}{{if .LowConf}} is-lowconf{{end}}{{if .Edited}} is-edited{{end}}"
+          id="seg-{{.ID}}" data-segment-id="{{.ID}}" data-start="{{.Start}}">
+
+        <!--
+          Seeking and correcting are both driven by script. Rendered hidden and
+          revealed by app.js, because with JavaScript blocked these are buttons
+          that focus, accept a keypress and do nothing — on a forty-line
+          transcript that is eighty dead tab stops between the reader and the
+          export links.
+        -->
+        <div class="segment-controls" dir="{{$.Loc.Dir}}" data-js-only hidden>
+          <button type="button" class="seek" data-start="{{.Start}}">
+            <span class="visually-hidden">{{$.Loc.PlayFrom}} </span>
+            <span class="timecode" dir="ltr">{{.Timecode}}</span>
+          </button>
+        </div>
+
+        <div class="segment-body">
+          <p class="segment-text">{{.Text}}</p>
+
+          {{if .Markers}}
+            <!--
+              Markers are words, not only a colour or an icon. An accessibility
+              tool that signalled "this line may be fabricated" purely by tint
+              would be withholding the warning from part of its audience.
+            -->
+            <p class="markers" dir="{{$.Loc.Dir}}">{{join ", " .Markers}}</p>
+          {{end}}
+
+          <div class="segment-actions" dir="{{$.Loc.Dir}}">
+            <button type="button" class="edit"
+                    aria-label="{{$.Loc.EditSegment}} — {{.Timecode}}">{{$.Loc.EditSegment}}</button>
+          </div>
+        </div>
+      </li>
+    {{end}}
+  </ol>
+
+{{else}}
+  <!--
+    An empty segment list means four different things, and only one of them is
+    "there was no speech". Saying that while the note is still queued tells a
+    deaf user their voice note was silent when nothing has run yet.
+  -->
+  {{if .Note.Pending}}
+    <p class="empty" role="status">{{.Loc.StillTranscribing}}</p>
+  {{else if .Note.Failed}}
+    <p class="empty">{{.Loc.CouldNotTranscribe}}</p>
+    {{if .Note.Error}}<p class="note-error"><bdi>{{.Note.Error}}</bdi></p>{{end}}
+  {{else}}
+    <p class="empty">{{.Loc.NoSpeech}}</p>
+  {{end}}
+{{end}}
+
+<section class="exports" aria-label="{{.Loc.ExportJSON}}">
+  <a class="button-link" href="/api/notes/{{.Note.ID}}/export?format=json">{{.Loc.ExportJSON}}</a>
+  <a class="button-link" href="/api/notes/{{.Note.ID}}/export?format=md">{{.Loc.ExportMD}}</a>
+</section>
+
+{{end}}

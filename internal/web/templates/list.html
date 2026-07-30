@@ -1,0 +1,115 @@
+{{define "content"}}
+
+<h1>{{.Loc.NotesHeading}}</h1>
+
+<form class="filters" method="get" action="/" role="search">
+  <div class="field">
+    <label for="q">{{.Loc.SearchLabel}}</label>
+    <input type="search" id="q" name="q" value="{{.Query}}"
+           aria-describedby="search-hint" autocomplete="off" dir="auto">
+    <p class="hint" id="search-hint">{{.Loc.SearchHint}}</p>
+  </div>
+
+  {{if .Chats}}
+  <div class="field">
+    <label for="chat">{{.Loc.ChatLabel}}</label>
+    <select id="chat" name="chat">
+      <option value="">{{.Loc.AllChats}}</option>
+      {{range .Chats}}
+        <option value="{{.ID}}" {{if eq .ID $.ChatID}}selected{{end}}>{{.Name}} ({{.Notes}})</option>
+      {{end}}
+    </select>
+  </div>
+  {{end}}
+
+  <div class="field field-actions">
+    <button type="submit">{{.Loc.SearchButton}}</button>
+    {{if or .Query .ChatID}}<a class="button-link" href="/">{{.Loc.ClearFilters}}</a>{{end}}
+  </div>
+</form>
+
+{{if .Query}}
+  <h2 class="results-heading">{{.Loc.ResultsFor}} <bdi>{{.Query}}</bdi></h2>
+
+  {{if .Hits}}
+    <ul class="note-list" id="note-list">
+      {{range $hit := .Hits}}
+        <li class="note-card">
+          <a class="note-link" href="{{$hit.Note.Href}}">
+            <span class="note-sender"><bdi>{{$hit.Note.Sender}}</bdi></span>
+            <span class="note-chat"><bdi>{{$hit.Note.Chat}}</bdi></span>
+            <span class="note-meta">
+              <time datetime="{{$hit.Note.ReceivedISO}}" dir="ltr">{{$hit.Note.Received}}</time>
+              <span class="dot" aria-hidden="true">·</span>
+              <span dir="ltr">{{$hit.Note.Duration}}</span>
+              <span class="dot" aria-hidden="true">·</span>
+              <span class="status status-{{$hit.Note.Status}}">{{$hit.Note.StatusLabel}}</span>
+            </span>
+          </a>
+
+          <p class="matches-label">{{$.Loc.MatchesIn}}</p>
+          <ul class="matches" lang="ar" dir="rtl">
+            {{range $hit.Matches}}
+              <li>
+                <a href="{{$hit.Note.Href}}#seg-{{.ID}}">
+                  <span class="timecode" dir="ltr">{{.Timecode}}</span>
+                  <span class="match-text">{{.Text}}</span>
+                </a>
+                <!--
+                  dir is reset here for the same reason note.html resets it on
+                  its marker line: English marker text plus literal parentheses
+                  inside an RTL list mirrors the brackets onto the wrong ends.
+                -->
+                {{if .Markers}}<span class="markers" dir="{{$.Loc.Dir}}">({{join ", " .Markers}})</span>{{end}}
+              </li>
+            {{end}}
+          </ul>
+        </li>
+      {{end}}
+    </ul>
+  {{else}}
+    <p class="empty">{{.Loc.NoResults}}</p>
+  {{end}}
+
+{{else}}
+
+  {{if .Notes}}
+    <ul class="note-list" id="note-list">
+      {{range .Notes}}
+        <li class="note-card" data-note-id="{{.ID}}">
+          <a class="note-link" href="{{.Href}}">
+            <span class="note-sender"><bdi>{{.Sender}}</bdi></span>
+            <span class="note-chat"><bdi>{{.Chat}}</bdi></span>
+            <span class="note-meta">
+              <time datetime="{{.ReceivedISO}}" dir="ltr">{{.Received}}</time>
+              <span class="dot" aria-hidden="true">·</span>
+              <span dir="ltr">{{.Duration}}</span>
+              <span class="dot" aria-hidden="true">·</span>
+              <span class="status status-{{.Status}}">{{.StatusLabel}}</span>
+            </span>
+          </a>
+          {{if .Error}}<p class="note-error"><bdi>{{.Error}}</bdi></p>{{end}}
+        </li>
+      {{end}}
+    </ul>
+  {{else}}
+    <p class="empty">{{.Loc.NoNotes}}</p>
+    <p class="hint">{{.Loc.NoNotesHint}}</p>
+  {{end}}
+
+{{end}}
+
+<section class="import" aria-labelledby="import-heading">
+  <h2 id="import-heading">{{.Loc.Import}}</h2>
+  <form method="post" action="/import" enctype="multipart/form-data" class="import-form">
+    <div class="field">
+      <label for="audio">{{.Loc.ImportLabel}}</label>
+      <input type="file" id="audio" name="audio" accept="audio/*" required
+             aria-describedby="import-hint">
+      <p class="hint" id="import-hint">{{.Loc.ImportHint}}</p>
+    </div>
+    <button type="submit">{{.Loc.ImportButton}}</button>
+  </form>
+</section>
+
+{{end}}

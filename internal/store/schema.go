@@ -12,11 +12,11 @@ const (
 	StatusDone         = "done"
 	StatusFailed       = "failed"
 
-	// StatusNoSpeech is a success, not a failure: voice activity detection ran
-	// and found no speech to transcribe. Without a distinct state this case
-	// either masquerades as a failure or produces an empty transcript that
-	// looks like a bug. It is reachable on any note that is pure noise, which
-	// on a real account happens within the first day.
+	// StatusNoSpeech is a success, not a failure: whisper returned no segments
+	// at all, which is what a note of pure noise or silence looks like. Without
+	// a distinct state this case either masquerades as a failure or produces an
+	// empty transcript that looks like a bug. It is reachable on any note that
+	// is pure noise, which on a real account happens within the first day.
 	StatusNoSpeech = "no_speech"
 )
 

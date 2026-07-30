@@ -8,23 +8,30 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 )
 
 const usage = `maktoob — read your voice notes, on your own machine.
 
 Usage:
+  maktoob serve              read your notes in a browser, on this machine
   maktoob import <file>...   transcribe audio files
   maktoob list               show stored notes
   maktoob show <id>          show one transcript
+  maktoob export <id>        write one transcript to stdout
   maktoob pair               link a WhatsApp device by scanning a QR code
   maktoob logout             unlink the device (transcripts are untouched)
+  maktoob purge              delete everything maktoob has stored
 
 Flags:
   -data     directory for media, database and session state (default "data")
   -asr      whisper-server base URL (default "http://127.0.0.1:8642")
   -model    model name recorded against transcripts (default "large-v3-turbo")
   -lang     language to transcribe as, or "auto" to detect (default "ar")
+  -addr     address for serve to listen on (default "127.0.0.1:8765")
+  -format   export format, "json" or "md" (default "json")
+  -yes      answer yes to purge's confirmation prompt
   -verbose  print whatsmeow's own diagnostics to stderr. These contain your
             contacts' phone numbers in the clear, so do not use this where
             stderr is redirected to a file or captured by a service manager.
@@ -45,6 +52,18 @@ func run(args []string) error {
 
 	command, rest := args[0], args[1:]
 
+	// Flags are parsed per subcommand, so they have to follow it. Someone who
+	// types `maktoob -data mine serve` out of habit would otherwise be told
+	// there is no command called "-data", which is true and useless. Say what
+	// to type instead.
+	if strings.HasPrefix(command, "-") && !isHelpFlag(command) {
+		if sub := firstNonFlag(args); sub != "" {
+			return fmt.Errorf("flags go after the command: try `maktoob %s %s`",
+				sub, strings.Join(without(args, sub), " "))
+		}
+		return fmt.Errorf("no command given; flags go after the command\n\n%s", usage)
+	}
+
 	fs := flag.NewFlagSet(command, flag.ContinueOnError)
 	dataDir := fs.String("data", "data", "directory for media, database and session state")
 	asrURL := fs.String("asr", "http://127.0.0.1:8642", "whisper-server base URL")
@@ -62,6 +81,14 @@ func run(args []string) error {
 	// leaving the user to discover it in a log.
 	verbose := fs.Bool("verbose", false,
 		"print whatsmeow diagnostics to stderr; these include contacts' phone numbers")
+	// Loopback by default, and the help text does not offer a recipe for
+	// changing it. There is no authentication and no account model, so binding
+	// this to a reachable interface publishes one person's private messages to
+	// the network. It is a flag rather than a constant because a user who knows
+	// they are behind something else may need it.
+	addr := fs.String("addr", "127.0.0.1:8765", "address for serve to listen on")
+	format := fs.String("format", "json", "export format: \"json\" or \"md\"")
+	assumeYes := fs.Bool("yes", false, "answer yes to purge's confirmation prompt")
 	if err := fs.Parse(rest); err != nil {
 		return err
 	}
@@ -80,6 +107,8 @@ func run(args []string) error {
 	}
 
 	switch command {
+	case "serve":
+		return cmdServe(ctx, cfg, *addr)
 	case "import":
 		return cmdImport(ctx, cfg, fs.Args())
 	case "list":
@@ -89,6 +118,13 @@ func run(args []string) error {
 			return fmt.Errorf("show requires exactly one note id")
 		}
 		return cmdShow(ctx, cfg, fs.Arg(0))
+	case "export":
+		if fs.NArg() != 1 {
+			return fmt.Errorf("export requires exactly one note id")
+		}
+		return cmdExport(ctx, cfg, fs.Arg(0), *format, os.Stdout)
+	case "purge":
+		return cmdPurge(ctx, cfg, *assumeYes, os.Stdin, os.Stdout)
 	case "pair":
 		return cmdPair(ctx, cfg)
 	case "logout":
@@ -99,6 +135,43 @@ func run(args []string) error {
 	default:
 		return fmt.Errorf("unknown command %q\n\n%s", command, usage)
 	}
+}
+
+func isHelpFlag(s string) bool {
+	return s == "-h" || s == "--help" || s == "-help"
+}
+
+// firstNonFlag finds the subcommand hiding behind a leading flag.
+//
+// It has to skip a flag's value as well as the flag: in `-data mine serve`,
+// "mine" is not the command. Boolean flags take no value, so they are listed
+// rather than guessed — treating -verbose as consuming "serve" would point the
+// user at the wrong fix.
+func firstNonFlag(args []string) string {
+	boolFlags := map[string]bool{"-verbose": true, "-yes": true}
+
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if !strings.HasPrefix(a, "-") {
+			return a
+		}
+		// `-data=mine` carries its value already.
+		if strings.Contains(a, "=") || boolFlags[a] {
+			continue
+		}
+		i++ // skip the value
+	}
+	return ""
+}
+
+func without(args []string, drop string) []string {
+	out := make([]string, 0, len(args))
+	for _, a := range args {
+		if a != drop {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 type config struct {

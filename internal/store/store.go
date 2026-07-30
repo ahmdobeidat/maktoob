@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -283,6 +284,16 @@ func (s *Store) SetStatus(ctx context.Context, noteID, status, errMsg string) er
 	return nil
 }
 
+// SetModel records which model produced a transcript, so a note transcribed
+// under a different model can be identified after the fact.
+func (s *Store) SetModel(ctx context.Context, noteID, model string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE notes SET model = ? WHERE id = ?`, model, noteID)
+	if err != nil {
+		return fmt.Errorf("set model: %w", err)
+	}
+	return nil
+}
+
 // SetWavPath records the converted audio path.
 func (s *Store) SetWavPath(ctx context.Context, noteID, wavPath string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE notes SET wav_path = ? WHERE id = ?`, wavPath, noteID)
@@ -432,9 +443,23 @@ func (s *Store) EditSegment(ctx context.Context, segmentID int64, text string) e
 	}
 	defer tx.Rollback()
 
-	res, err := tx.ExecContext(ctx,
-		`UPDATE segments SET edited_text = ?, edited_at = ? WHERE id = ?`,
-		text, time.Now().UnixMilli(), segmentID)
+	// An empty correction means "undo", not "store an empty line". Writing it
+	// through as an edit would leave the row flagged as corrected forever and,
+	// worse, index the empty string — which silently drops the line out of
+	// search, because the machine text it used to be findable by is no longer
+	// in the index. Reverting restores both the text and its searchability.
+	revert := strings.TrimSpace(text) == ""
+
+	var res sql.Result
+	if revert {
+		res, err = tx.ExecContext(ctx,
+			`UPDATE segments SET edited_text = NULL, edited_at = NULL WHERE id = ?`,
+			segmentID)
+	} else {
+		res, err = tx.ExecContext(ctx,
+			`UPDATE segments SET edited_text = ?, edited_at = ? WHERE id = ?`,
+			text, time.Now().UnixMilli(), segmentID)
+	}
 	if err != nil {
 		return fmt.Errorf("edit segment: %w", err)
 	}
@@ -442,10 +467,20 @@ func (s *Store) EditSegment(ctx context.Context, segmentID int64, text string) e
 		return ErrNotFound
 	}
 
+	// What gets indexed is what Text() will display, so a reverted segment is
+	// findable by its machine output again.
+	indexed := text
+	if revert {
+		if err := tx.QueryRowContext(ctx,
+			`SELECT asr_text FROM segments WHERE id = ?`, segmentID).Scan(&indexed); err != nil {
+			return fmt.Errorf("edit segment: read original: %w", err)
+		}
+	}
+
 	if _, err := tx.ExecContext(ctx, `DELETE FROM segments_fts WHERE rowid = ?`, segmentID); err != nil {
 		return fmt.Errorf("edit segment: clear index: %w", err)
 	}
-	if err := indexSegment(ctx, tx, segmentID, text); err != nil {
+	if err := indexSegment(ctx, tx, segmentID, indexed); err != nil {
 		return err
 	}
 
@@ -525,39 +560,9 @@ func (s *Store) segmentsFor(ctx context.Context, noteID string) ([]Segment, erro
 	return out, rows.Err()
 }
 
-// ListNotes returns notes newest first.
+// ListNotes returns notes newest first, across every chat.
 func (s *Store) ListNotes(ctx context.Context, limit int) ([]Note, error) {
-	if limit <= 0 {
-		limit = 50
-	}
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT n.id, n.chat_id, c.display_name, n.source, n.sender, n.sender_name,
-		       n.media_path, n.duration_ms, n.received_at, n.status, n.error
-		FROM notes n
-		JOIN chats c ON c.id = n.chat_id
-		ORDER BY n.received_at DESC
-		LIMIT ?`, limit)
-	if err != nil {
-		return nil, fmt.Errorf("list notes: %w", err)
-	}
-	defer rows.Close()
-
-	var out []Note
-	for rows.Next() {
-		var n Note
-		var received int64
-		var chatName, sender, senderName, errMsg sql.NullString
-
-		if err := rows.Scan(&n.ID, &n.ChatID, &chatName, &n.Source, &sender, &senderName,
-			&n.MediaPath, &n.DurationMS, &received, &n.Status, &errMsg); err != nil {
-			return nil, fmt.Errorf("list notes: %w", err)
-		}
-		n.ChatName, n.Sender = chatName.String, sender.String
-		n.SenderName, n.Error = senderName.String, errMsg.String
-		n.ReceivedAt = time.UnixMilli(received)
-		out = append(out, n)
-	}
-	return out, rows.Err()
+	return s.ListNotesByChat(ctx, "", limit)
 }
 
 // buildQuery converts user input into a safe FTS5 MATCH expression. It is the

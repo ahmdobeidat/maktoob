@@ -9,7 +9,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -78,15 +80,43 @@ func (f FFmpeg) ToWAV(ctx context.Context, src, dst string) error {
 
 	if err := cmd.Run(); err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return fmt.Errorf("ffmpeg timed out after %s converting %s", ConvertTimeout, src)
+			return fmt.Errorf("ffmpeg timed out after %s converting %s",
+				ConvertTimeout, filepath.Base(src))
 		}
 		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {
 			msg = err.Error()
 		}
-		return fmt.Errorf("ffmpeg: %s", msg)
+		return fmt.Errorf("ffmpeg: %s", redactPaths(msg, src, dst))
+	}
+
+	// ffmpeg creates the output at the process umask, typically 0644. This file
+	// is the complete audio of a private message, and the rest of the project
+	// is careful to keep that at 0600 — the database says so in a comment
+	// several lines long. The enclosing directory is 0700, which saves this in
+	// practice, but relying on that leaves the guarantee one refactor away from
+	// being false.
+	if err := os.Chmod(dst, 0o600); err != nil {
+		return fmt.Errorf("restrict converted audio: %w", err)
 	}
 	return nil
+}
+
+// redactPaths replaces absolute paths with their file names.
+//
+// ffmpeg names its input in diagnostics, and that message is stored on the note
+// and rendered into JSON and Markdown exports — files a user may hand to
+// someone else. An export that discloses the reader's home directory layout
+// contradicts the one promise this project makes. The paths are known here, so
+// they are replaced by name rather than guessed at with a pattern.
+func redactPaths(msg string, paths ...string) string {
+	for _, p := range paths {
+		if p == "" {
+			continue
+		}
+		msg = strings.ReplaceAll(msg, p, filepath.Base(p))
+	}
+	return msg
 }
 
 // DurationMS reports the media duration in milliseconds.
@@ -114,7 +144,7 @@ func (f FFmpeg) DurationMS(ctx context.Context, src string) (int64, error) {
 		if msg == "" {
 			msg = err.Error()
 		}
-		return 0, fmt.Errorf("ffprobe: %s", msg)
+		return 0, fmt.Errorf("ffprobe: %s", redactPaths(msg, src))
 	}
 
 	text := strings.TrimSpace(stdout.String())

@@ -33,9 +33,7 @@ differ from maktoob's and continue to apply to their respective code.
                                      https://ffmpeg.org
     Audio format conversion. Invoked as an external process, not linked.
 
-  Silero VAD             MIT         https://github.com/snakers4/silero-vad
-    Voice activity detection model, loaded by whisper.cpp at runtime.
-
 Whisper models (ggml format) are distributed by the whisper.cpp project and
-are not redistributed here. They are downloaded from that project separately;
-see the README for the current instructions.
+are not redistributed here. scripts/setup.sh fetches one by invoking that
+project's own download script, so the source and the checksum remain theirs
+rather than something this repository restates. See docs/INSTALL.md.

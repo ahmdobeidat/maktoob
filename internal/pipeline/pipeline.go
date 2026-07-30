@@ -229,6 +229,13 @@ func (p *Pipeline) process(ctx context.Context, note store.Note) error {
 	defer cancel()
 
 	result, err := p.ASR.Transcribe(tctx, wavPath)
+
+	// The wav is a disposable intermediate: nothing serves it, the player uses
+	// the original, and a retry regenerates it. Keeping it stored every note's
+	// audio twice — the second copy being the uncompressed one. Removed on the
+	// failure path too, for the same reason.
+	p.discardWAV(ctx, note.ID, wavPath)
+
 	if err != nil {
 		return fmt.Errorf("transcribe: %w", err)
 	}
@@ -255,6 +262,15 @@ func (p *Pipeline) process(ctx context.Context, note store.Note) error {
 		return err
 	}
 
+	// Recorded now rather than at ingest, because until this point no model has
+	// produced anything. The -model flag advertises itself as "recorded against
+	// transcripts"; without this it was accepted and discarded.
+	if p.Model != "" {
+		if err := p.Store.SetModel(ctx, note.ID, p.Model); err != nil {
+			return err
+		}
+	}
+
 	// Voice activity detection finding nothing is a successful outcome, not a
 	// failure. Without a distinct state it either looks like a bug or like an
 	// empty transcript nobody can explain.
@@ -263,6 +279,22 @@ func (p *Pipeline) process(ctx context.Context, note store.Note) error {
 		status = store.StatusNoSpeech
 	}
 	return p.Store.SetStatus(ctx, note.ID, status, "")
+}
+
+// discardWAV removes the converted intermediate and forgets its path.
+//
+// Failure to delete is logged nowhere and returned nowhere on purpose: the
+// transcript is the product, and a note must not be marked failed because a
+// temporary file could not be unlinked. The path is cleared first so the
+// database never points at a file that is gone.
+func (p *Pipeline) discardWAV(ctx context.Context, noteID, wavPath string) {
+	// A cancelled context would make this update fail and leave a dangling
+	// path, so the clear runs on its own short-lived context.
+	clearCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+
+	_ = p.Store.SetWavPath(clearCtx, noteID, "")
+	_ = os.Remove(wavPath)
 }
 
 // Drain processes queued notes until the queue is empty or ctx is cancelled.

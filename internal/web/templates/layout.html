@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="{{.Loc.Lang}}" dir="{{.Loc.Dir}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>{{.Title}} — {{.Loc.AppName}}</title>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" href="data:,">
+</head>
+<body>
+
+<a class="skip-link" href="#main">{{.Loc.SkipToContent}}</a>
+
+<header class="site-header">
+  <div class="wrap header-row">
+    <a class="brand" href="/">
+      <span class="brand-name">{{.Loc.AppName}}</span>
+      <span class="brand-tagline">{{.Loc.Tagline}}</span>
+    </a>
+    {{if .WAState}}
+      <p class="wa-state" role="status">{{.WAState}}</p>
+    {{end}}
+  </div>
+</header>
+
+<!--
+  Announcements land here. Screen reader users are told a note arrived or
+  finished at the same moment the page visibly changes; without this the update
+  is silent and the interface only works if you are watching it.
+-->
+<div id="live" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+
+<!--
+  Strings and direction for the script, so the JavaScript holds no user-facing
+  text of its own and translating the Locale translates it too. It lives in the
+  layout rather than one page because the live-update code runs on both.
+-->
+<div id="i18n" hidden
+     data-dir="{{.Loc.Dir}}"
+     data-save="{{.Loc.Save}}"
+     data-cancel="{{.Loc.Cancel}}"
+     data-saving="{{.Loc.Saving}}"
+     data-save-failed="{{.Loc.SaveFailed}}"
+     data-saved="{{.Loc.AnnounceSaved}}"
+     data-save-failed-announce="{{.Loc.AnnounceSaveFailed}}"
+     data-edit="{{.Loc.EditSegment}}"></div>
+
+<main id="main" class="wrap" tabindex="-1">
+  {{template "content" .}}
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <p>{{.Loc.PrivacyNote}}</p>
+  </div>
+</footer>
+
+<script src="/static/app.js" defer></script>
+</body>
+</html>
