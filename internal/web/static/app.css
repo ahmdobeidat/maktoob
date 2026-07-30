@@ -280,6 +280,19 @@ button.secondary, .button-link.secondary {
 .note-sender { font-weight: 650; font-size: 1.05rem; }
 .note-chat { color: var(--ink-muted); font-size: 0.9rem; }
 
+/* The first transcript line. Clamped to two lines so one long note cannot
+   push the rest of the list off the screen. */
+.note-preview {
+  font-family: var(--font-ar);
+  font-size: 1.02rem;
+  line-height: 1.7;
+  margin-block-start: 0.3rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .note-meta {
   display: flex;
   flex-wrap: wrap;

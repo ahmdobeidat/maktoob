@@ -71,11 +71,22 @@ func (s *Store) ListNotesByChat(ctx context.Context, chatID string, limit int) (
 	// Two statements rather than one with `(? = '' OR n.chat_id = ?)`, because
 	// that form defeats idx_notes_received: SQLite cannot use the index for the
 	// ordering and the filter at once when the filter is hidden behind an OR.
+	//
+	// The preview is the first line of the transcript, joined in rather than
+	// fetched per note. Without it the list is metadata only and the reader has
+	// to open every note to discover what it says, which for a tool whose whole
+	// point is skimming is most of the value gone.
+	//
+	// It prefers a human correction over the machine output, exactly as the
+	// transcript itself does, so the list never shows text the note no longer
+	// says. idx = 0 keeps the join to one row per note.
 	const cols = `
 		SELECT n.id, n.chat_id, c.display_name, n.source, n.sender, n.sender_name,
-		       n.media_path, n.duration_ms, n.received_at, n.status, n.error
+		       n.media_path, n.duration_ms, n.received_at, n.status, n.error,
+		       COALESCE(NULLIF(sg.edited_text, ''), sg.asr_text, '') AS preview
 		FROM notes n
-		JOIN chats c ON c.id = n.chat_id`
+		JOIN chats c ON c.id = n.chat_id
+		LEFT JOIN segments sg ON sg.note_id = n.id AND sg.idx = 0`
 
 	var (
 		rows *sql.Rows
@@ -111,14 +122,15 @@ func (s *Store) ListNotesByChat(ctx context.Context, chatID string, limit int) (
 func scanListedNote(rows *sql.Rows) (Note, error) {
 	var n Note
 	var received int64
-	var chatName, sender, senderName, errMsg sql.NullString
+	var chatName, sender, senderName, errMsg, preview sql.NullString
 
 	if err := rows.Scan(&n.ID, &n.ChatID, &chatName, &n.Source, &sender, &senderName,
-		&n.MediaPath, &n.DurationMS, &received, &n.Status, &errMsg); err != nil {
+		&n.MediaPath, &n.DurationMS, &received, &n.Status, &errMsg, &preview); err != nil {
 		return Note{}, fmt.Errorf("list notes: %w", err)
 	}
 	n.ChatName, n.Sender = chatName.String, sender.String
 	n.SenderName, n.Error = senderName.String, errMsg.String
+	n.Preview = preview.String
 	n.ReceivedAt = time.UnixMilli(received)
 	return n, nil
 }
@@ -142,11 +154,16 @@ func (s *Store) Search(ctx context.Context, userQuery string, limit int) ([]Hit,
 		       sg.edited_text, sg.avg_logprob, sg.no_speech_prob, sg.suspect,
 		       sg.edited_at,
 		       n.chat_id, c.display_name, n.source, n.sender, n.sender_name,
-		       n.duration_ms, n.received_at, n.status
+		       n.duration_ms, n.received_at, n.status,
+		       -- The note's first line, so a search result describes the same
+		       -- note the unfiltered list describes. Without it the two list
+		       -- shapes disagree about what a note is.
+		       COALESCE(NULLIF(first.edited_text, ''), first.asr_text, '') AS preview
 		FROM segments_fts f
 		JOIN segments sg ON sg.id = f.rowid
 		JOIN notes n     ON n.id = sg.note_id
 		JOIN chats c     ON c.id = n.chat_id
+		LEFT JOIN segments first ON first.note_id = n.id AND first.idx = 0
 		WHERE segments_fts MATCH ?
 		ORDER BY n.received_at DESC, sg.idx ASC
 		LIMIT ?`, q, limit)
@@ -158,7 +175,7 @@ func (s *Store) Search(ctx context.Context, userQuery string, limit int) ([]Hit,
 	var out []Hit
 	for rows.Next() {
 		var h Hit
-		var edited, chatName, sender, senderName sql.NullString
+		var edited, chatName, sender, senderName, preview sql.NullString
 		var editedAt sql.NullInt64
 		var suspect int
 		var received int64
@@ -169,7 +186,7 @@ func (s *Store) Search(ctx context.Context, userQuery string, limit int) ([]Hit,
 			&edited, &h.Segment.AvgLogprob, &h.Segment.NoSpeechProb,
 			&suspect, &editedAt,
 			&h.Note.ChatID, &chatName, &h.Note.Source, &sender, &senderName,
-			&h.Note.DurationMS, &received, &h.Note.Status,
+			&h.Note.DurationMS, &received, &h.Note.Status, &preview,
 		); err != nil {
 			return nil, fmt.Errorf("search: %w", err)
 		}
@@ -184,6 +201,7 @@ func (s *Store) Search(ctx context.Context, userQuery string, limit int) ([]Hit,
 		h.Note.ID = h.Segment.NoteID
 		h.Note.ChatName, h.Note.Sender, h.Note.SenderName = chatName.String, sender.String, senderName.String
 		h.Note.ReceivedAt = time.UnixMilli(received)
+		h.Note.Preview = preview.String
 
 		out = append(out, h)
 	}

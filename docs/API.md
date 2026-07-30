@@ -74,11 +74,16 @@ Without `q`, returns notes newest first:
       "source": "whatsapp",
       "received_at": "2026-07-30T12:04:11+03:00",
       "duration_ms": 12400,
-      "status": "done"
+      "status": "done",
+      "preview": "the first line of the transcript"
     }
   ]
 }
 ```
+
+`preview` is the first line of the transcript, preferring a correction over the
+machine output, trimmed to 140 characters. It is the same text the web list
+shows, and it is absent on a note that has not been transcribed yet.
 
 With `q`, returns one group per note, carrying the lines that matched. A note
 with three matching lines is one result, not three:

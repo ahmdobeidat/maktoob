@@ -87,6 +87,15 @@
               <span class="dot" aria-hidden="true">·</span>
               <span class="status status-{{.Status}}">{{.StatusLabel}}</span>
             </span>
+            {{if .Preview}}
+              <!--
+                The first line of the transcript. This is what makes the list
+                skimmable instead of a wall of metadata, and it is the reason
+                the list is useful without opening anything. Arabic, so it
+                carries its own direction rather than the chrome's.
+              -->
+              <span class="note-preview" lang="ar" dir="rtl">{{.Preview}}</span>
+            {{end}}
           </a>
           {{if .Error}}<p class="note-error"><bdi>{{.Error}}</bdi></p>{{end}}
         </li>
