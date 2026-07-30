@@ -55,7 +55,12 @@
                   <span class="timecode" dir="ltr">{{.Timecode}}</span>
                   <span class="match-text">{{.Text}}</span>
                 </a>
-                {{if .Markers}}<span class="markers">({{join ", " .Markers}})</span>{{end}}
+                <!--
+                  dir is reset here for the same reason note.html resets it on
+                  its marker line: English marker text plus literal parentheses
+                  inside an RTL list mirrors the brackets onto the wrong ends.
+                -->
+                {{if .Markers}}<span class="markers" dir="{{$.Loc.Dir}}">({{join ", " .Markers}})</span>{{end}}
               </li>
             {{end}}
           </ul>

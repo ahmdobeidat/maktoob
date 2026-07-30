@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -39,8 +40,19 @@ const idlePoll = 750 * time.Millisecond
 // Ctrl-C feels like Ctrl-C.
 const shutdownGrace = 5 * time.Second
 
+// workerGrace is how long stopping waits for a note already being transcribed.
+//
+// Sized against the measured 13-15s per note, so an ordinary Ctrl-C mid-note
+// keeps the transcript instead of throwing it away and burning one of the
+// note's two attempts. A note still running after this is stuck rather than
+// busy, and waiting longer only makes the process feel hung.
+const workerGrace = 25 * time.Second
+
 func cmdServe(ctx context.Context, cfg config, addr string) error {
 	log := slog.Default()
+	// One locale for the whole process: the pages, the exports and the spoken
+	// announcements all have to agree about what a status is called.
+	loc := web.English
 
 	st, pl, err := open(ctx, cfg)
 	if err != nil {
@@ -66,10 +78,10 @@ func cmdServe(ctx context.Context, cfg config, addr string) error {
 	// is the same seam the WhatsApp adapter uses, and it is why transcription
 	// keeps working when the interface is not running.
 	pl.OnNote = func(noteID string) {
-		publishNoteUpdate(ctx, st, broker, noteID)
+		publishNoteUpdate(ctx, st, broker, loc, noteID)
 	}
 
-	waHandle, err := startWhatsApp(ctx, cfg, pl, broker, log)
+	waHandle, err := startWhatsApp(ctx, cfg, pl, broker, loc, log)
 	if err != nil {
 		// Not fatal. Imported files and stored transcripts do not need WhatsApp,
 		// and a server that refuses to start because a phone is unreachable is
@@ -85,21 +97,38 @@ func cmdServe(ctx context.Context, cfg config, addr string) error {
 		Pipeline:      pl,
 		Broker:        broker,
 		Logger:        log,
+		Locale:        &loc,
 		WhatsAppState: waHandle.stateFunc(),
 	})
 	if err != nil {
 		return err
 	}
 
-	// Bound the worker and the HTTP server to the same lifetime, so that either
-	// one stopping brings the process down rather than leaving half of it up.
-	runCtx, stop := context.WithCancel(ctx)
-	defer stop()
+	// The worker's context is deliberately NOT a child of the signal context.
+	//
+	// A child is cancelled synchronously with its parent, in the same call. So
+	// deriving the worker from ctx meant that by the time this function noticed
+	// the signal, the in-flight ffmpeg subprocess and the in-flight whisper
+	// request had already been aborted — the note was killed by the signal
+	// itself, not stopped in an orderly way afterwards. It came back on the
+	// next launch as a retry, and a note on its second attempt was marked
+	// permanently failed. An earlier version of this file carried a comment
+	// claiming the opposite was true; the comment was aspirational and the code
+	// did the thing it said it avoided.
+	workerCtx, killWorker := context.WithCancel(context.WithoutCancel(ctx))
+	defer killWorker()
+
+	// Closing this asks the worker to stop between notes without interrupting
+	// the one it is on. Cancelling workerCtx is the harsher fallback.
+	stopWorker := make(chan struct{})
+	var stopOnce sync.Once
+	askWorkerToStop := func() { stopOnce.Do(func() { close(stopWorker) }) }
+	defer askWorkerToStop()
 
 	workerDone := make(chan struct{})
 	go func() {
 		defer close(workerDone)
-		runWorker(runCtx, pl, log)
+		runWorker(workerCtx, stopWorker, pl, log)
 	}()
 
 	httpSrv := &http.Server{
@@ -108,7 +137,9 @@ func cmdServe(ctx context.Context, cfg config, addr string) error {
 		// No write timeout. The event stream is a long-lived response by
 		// design, and a write deadline would sever it on a schedule.
 		IdleTimeout: 120 * time.Second,
-		BaseContext: func(net.Listener) context.Context { return runCtx },
+		// Request contexts DO follow the signal, so an open /events stream
+		// unblocks on Ctrl-C instead of holding shutdown open for its lifetime.
+		BaseContext: func(net.Listener) context.Context { return ctx },
 	}
 
 	listener, err := net.Listen("tcp", addr)
@@ -130,7 +161,7 @@ func cmdServe(ctx context.Context, cfg config, addr string) error {
 
 	select {
 	case err := <-serveErr:
-		stop()
+		askWorkerToStop()
 		<-workerDone
 		return err
 
@@ -139,50 +170,72 @@ func cmdServe(ctx context.Context, cfg config, addr string) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 		defer cancel()
 
-		// Shut the server first so no new work arrives, then let the worker
-		// finish the note it is on. Cancelling the worker first would abandon a
-		// transcription that was seconds from done, and the note would come back
-		// as a retry on next launch.
+		// Stop accepting first, so nothing new is queued while we wait.
 		shutErr := httpSrv.Shutdown(shutdownCtx)
-		stop()
-		<-workerDone
+
+		// Then let the worker finish the note it is on, rather than killing a
+		// transcription that may be a second from done. This only asks it to
+		// stop looping; the note in flight runs to completion.
+		askWorkerToStop()
+
+		select {
+		case <-workerDone:
+		case <-time.After(workerGrace):
+			// The note has outlasted its grace. killWorker fires from the
+			// deferred call on the way out, which costs this note a retry —
+			// the lesser evil against a process that will not exit.
+			fmt.Println("a transcription is still running; it will resume on the next launch")
+		}
 		return shutErr
 	}
 }
 
-// runWorker drains the transcription queue until the context is cancelled.
-func runWorker(ctx context.Context, pl transcriber, log *slog.Logger) {
+// runWorker drains the transcription queue until asked to stop.
+//
+// stop and ctx are two different requests and the difference is the whole point.
+// Closing stop means "finish the note you are on, then exit" — it is checked
+// between notes and never interrupts one. Cancelling ctx means "drop everything
+// now", which kills the ffmpeg subprocess and the in-flight whisper request and
+// costs the note a retry. Shutdown uses the first and falls back to the second
+// only if a note outlasts its grace period.
+func runWorker(ctx context.Context, stop <-chan struct{}, pl transcriber, log *slog.Logger) {
 	for {
-		if ctx.Err() != nil {
+		select {
+		case <-stop:
 			return
+		case <-ctx.Done():
+			return
+		default:
 		}
 
 		did, err := pl.ProcessNext(ctx)
 		switch {
 		case err != nil && ctx.Err() != nil:
-			// Shutting down mid-note. Not a fault worth reporting.
+			// Torn down mid-note. Not a fault worth reporting.
 			return
 		case err != nil:
 			// ProcessNext already recorded a per-note failure against the row;
 			// reaching here means the store itself refused, so backing off is
 			// better than spinning on it.
 			log.Error("transcription worker", "err", err)
-			if sleep(ctx, 2*time.Second) {
+			if sleep(ctx, stop, 2*time.Second) {
 				return
 			}
 		case !did:
-			if sleep(ctx, idlePoll) {
+			if sleep(ctx, stop, idlePoll) {
 				return
 			}
 		}
 	}
 }
 
-// sleep waits for d or until ctx is done, reporting whether it was cancelled.
-func sleep(ctx context.Context, d time.Duration) bool {
+// sleep waits for d, reporting whether it was asked to stop instead.
+func sleep(ctx context.Context, stop <-chan struct{}, d time.Duration) bool {
 	timer := time.NewTimer(d)
 	defer timer.Stop()
 	select {
+	case <-stop:
+		return true
 	case <-ctx.Done():
 		return true
 	case <-timer.C:
@@ -195,7 +248,18 @@ func sleep(ctx context.Context, d time.Duration) bool {
 // The status is read back from the store rather than assumed, because the
 // caller only knows the note reached *a* terminal state, and "failed" and
 // "transcribed" are not interchangeable to the person waiting for it.
-func publishNoteUpdate(ctx context.Context, st *store.Store, broker *web.Broker, noteID string) {
+//
+// Text is a whole sentence taken from the configured locale, not a status word.
+// It is spoken aloud by a screen reader, and "transcribed" on its own, with no
+// subject, tells the listener nothing.
+func publishNoteUpdate(ctx context.Context, st *store.Store, broker *web.Broker, loc web.Locale, noteID string) {
+	// Detached from the caller's cancellation. The worker now outlives the
+	// signal by design, so a note finishing during stopping must still be able
+	// to read its own status back — otherwise the last note of every session
+	// reports as an error it did not have.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+
 	note, _, err := st.GetNote(ctx, noteID)
 	if err != nil {
 		broker.Publish(web.Event{Kind: web.KindUpdated, NoteID: noteID})
@@ -205,7 +269,7 @@ func publishNoteUpdate(ctx context.Context, st *store.Store, broker *web.Broker,
 		Kind:   web.KindUpdated,
 		NoteID: noteID,
 		Status: note.Status,
-		Text:   web.English.StatusLabel(note.Status),
+		Text:   loc.Announcement(note.Status),
 	})
 }
 
@@ -254,6 +318,7 @@ func startWhatsApp(
 	cfg config,
 	pl *pipeline.Pipeline,
 	broker *web.Broker,
+	loc web.Locale,
 	log *slog.Logger,
 ) (*whatsAppHandle, error) {
 	if _, err := os.Stat(cfg.sessionPath()); errors.Is(err, os.ErrNotExist) {
@@ -278,23 +343,22 @@ func startWhatsApp(
 	h := &whatsAppHandle{disconn: client.Disconnect}
 	h.state.Store(wa.Disconnected.String())
 
-	sink := newWASink(pl, log)
+	// Announced before transcription starts. The arrival is the part the user is
+	// waiting to be told about; the transcript follows on its own event some
+	// thirteen seconds later. The id comes from the ingest rather than being
+	// left empty, so a client can resolve the note it was just told about.
+	sink := newWASink(pl, log, func(noteID string) {
+		broker.Publish(web.Event{
+			Kind:   web.KindArrived,
+			NoteID: noteID,
+			Status: store.StatusPending,
+			Text:   loc.AnnounceArrived,
+		})
+	})
+
 	h.listener = &wa.Listener{
-		Client: client,
-		Sink: wa.SinkFunc(func(ctx context.Context, n wa.VoiceNote) error {
-			if err := sink(ctx, n); err != nil {
-				return err
-			}
-			// Announced before transcription starts. The arrival is the part the
-			// user is waiting to be told about; the transcript follows on its own
-			// event thirteen seconds later.
-			broker.Publish(web.Event{
-				Kind:   web.KindArrived,
-				Status: store.StatusPending,
-				Text:   web.English.StatusPending,
-			})
-			return nil
-		}),
+		Client:  client,
+		Sink:    sink,
 		Salt:    salt,
 		Log:     log,
 		OnState: func(s wa.State) { h.state.Store(s.String()) },

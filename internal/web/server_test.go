@@ -695,3 +695,58 @@ func TestSearchResultsCarryTheSameNoteFieldsAsTheList(t *testing.T) {
 		}
 	}
 }
+
+// An empty segment list means four different things. Saying "no speech was
+// detected" while a note is still queued tells a deaf user their voice note was
+// silent when in fact nothing has run yet — and with JavaScript off it says so
+// permanently. This is the product's core promise failing to its worst default.
+func TestEmptyTranscriptSaysWhichKindOfEmptyItIs(t *testing.T) {
+	ctx := context.Background()
+
+	for _, tc := range []struct {
+		status  string
+		want    string
+		mustNot string
+	}{
+		{store.StatusPending, English.StillTranscribing, English.NoSpeech},
+		{store.StatusConverting, English.StillTranscribing, English.NoSpeech},
+		{store.StatusTranscribing, English.StillTranscribing, English.NoSpeech},
+		{store.StatusFailed, English.CouldNotTranscribe, English.NoSpeech},
+		{store.StatusNoSpeech, English.NoSpeech, English.StillTranscribing},
+	} {
+		t.Run(tc.status, func(t *testing.T) {
+			f := newFixture(t)
+			if err := f.store.UpsertChat(ctx, "chat-1", "Umm Ahmad"); err != nil {
+				t.Fatalf("upsert: %v", err)
+			}
+			ok, err := f.store.CreateNote(ctx, store.Note{
+				ID: "n1", ChatID: "chat-1", Source: "whatsapp",
+				MediaPath:  filepath.Join(f.dir, "n1.ogg"),
+				ReceivedAt: time.Now(), Status: tc.status,
+			})
+			if err != nil || !ok {
+				t.Fatalf("create: %v", err)
+			}
+
+			body := f.do(http.MethodGet, "/note/n1", nil).Body.String()
+			if !strings.Contains(body, tc.want) {
+				t.Errorf("a %s note does not say %q", tc.status, tc.want)
+			}
+			if strings.Contains(body, tc.mustNot) {
+				t.Errorf("a %s note wrongly says %q", tc.status, tc.mustNot)
+			}
+		})
+	}
+}
+
+// Seeking and correcting are script-driven. Rendered visible without
+// JavaScript they are buttons that focus, take a keypress and do nothing — on a
+// forty-line transcript, eighty dead tab stops before the export links.
+func TestScriptedControlsShipHidden(t *testing.T) {
+	f := newFixture(t).seed()
+
+	body := f.do(http.MethodGet, "/note/"+f.noteID, nil).Body.String()
+	if !strings.Contains(body, "data-js-only hidden") {
+		t.Error("the seek control is not hidden for readers without JavaScript")
+	}
+}

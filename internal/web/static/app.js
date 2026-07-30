@@ -17,6 +17,21 @@
   var i18nEl = document.getElementById("i18n");
   var t = i18nEl ? i18nEl.dataset : {};
   var live = document.getElementById("live");
+  // The chrome's direction. Anything this script builds has to carry it
+  // explicitly, because the transcript it gets inserted into is dir="rtl" and
+  // English strings would otherwise render with their punctuation reversed.
+  var uiDir = t.dir || document.documentElement.getAttribute("dir") || "ltr";
+
+  // Seeking and correcting only work with this file running, so the markup
+  // ships them hidden and they are revealed here. Without this they are buttons
+  // that focus, accept a keypress and do nothing — on a long transcript, dozens
+  // of dead tab stops between the reader and the rest of the page.
+  function revealScriptedControls(root) {
+    (root || document).querySelectorAll("[data-js-only][hidden]").forEach(function (el) {
+      el.hidden = false;
+    });
+  }
+  revealScriptedControls();
 
   function announce(message) {
     if (!live || !message) return;
@@ -92,6 +107,9 @@
 
     var row = document.createElement("div");
     row.className = "editor-actions";
+    // Without this the buttons inherit the transcript's rtl and Save/Cancel
+    // render in the opposite order to every other pair of buttons on the page.
+    row.setAttribute("dir", uiDir);
 
     var save = document.createElement("button");
     save.type = "button";
@@ -104,6 +122,11 @@
 
     var error = document.createElement("p");
     error.className = "editor-error";
+    error.setAttribute("dir", uiDir);
+    // role="alert" so the failure is spoken. Without it a screen-reader user
+    // presses Save, hears nothing at all, and has no way to learn the
+    // correction was lost.
+    error.setAttribute("role", "alert");
     error.hidden = true;
 
     row.appendChild(save);
@@ -128,7 +151,7 @@
 
     cancel.addEventListener("click", close);
 
-    field.addEventListener("keydown", function (ev) {
+    editor.addEventListener("keydown", function (ev) {
       if (ev.key === "Escape") {
         ev.preventDefault();
         close();
@@ -160,7 +183,7 @@
         .then(function (seg) {
           applySegment(segment, seg);
           close();
-          announce(t.edited || "edited");
+          announce(t.saved || "");
         })
         .catch(function () {
           save.disabled = false;
@@ -168,6 +191,7 @@
           save.textContent = t.save || "Save";
           error.textContent = t.saveFailed || "Could not save.";
           error.hidden = false;
+          announce(t.saveFailedAnnounce || t.saveFailed || "");
         });
     });
   }
@@ -188,6 +212,7 @@
       if (!markers) {
         markers = document.createElement("p");
         markers.className = "markers";
+        markers.setAttribute("dir", uiDir);
         var body = segment.querySelector(".segment-body");
         var actions = segment.querySelector(".segment-actions");
         if (body) body.insertBefore(markers, actions || null);
@@ -233,12 +258,59 @@
       .catch(function () { /* the next event will try again */ });
   }
 
+  // swap replaces a region with its freshly-rendered version, keeping keyboard
+  // focus where the user left it.
+  //
+  // replaceWith destroys the focused element, and the browser then resets focus
+  // to <body> — silently throwing a keyboard user to the top of the document
+  // mid-navigation. With a burst of notes finishing, that happens every 400ms
+  // and makes the page unusable without a mouse. So the focused control is
+  // identified by a stable attribute before the swap and refocused after it.
   function swap(doc, selector) {
     var fresh = doc.querySelector(selector);
     var current = document.querySelector(selector);
     if (!fresh || !current) return false;
+
+    var path = focusPath(document.activeElement, current);
     current.replaceWith(fresh);
+    if (path) restoreFocus(path, fresh);
+
+    revealScriptedControls(fresh);
     return true;
+  }
+
+  // focusPath describes the focused element well enough to find its counterpart
+  // in the replacement markup, or returns null if focus is outside the region
+  // being swapped.
+  function focusPath(active, region) {
+    if (!active || active === document.body || !region.contains(active)) return null;
+
+    var owner = active.closest("[data-segment-id], [data-note-id]");
+    if (!owner) return null;
+
+    return {
+      ownerAttr: owner.hasAttribute("data-segment-id") ? "data-segment-id" : "data-note-id",
+      ownerValue: owner.getAttribute("data-segment-id") || owner.getAttribute("data-note-id"),
+      // Which control within that row, so focus lands on the seek button again
+      // rather than merely somewhere in the right note.
+      controlClass: active.className || ""
+    };
+  }
+
+  function restoreFocus(path, fresh) {
+    var owner = fresh.querySelector(
+      "[" + path.ownerAttr + '="' + (window.CSS && CSS.escape ? CSS.escape(path.ownerValue) : path.ownerValue) + '"]'
+    );
+    if (!owner) return;
+
+    var target = null;
+    if (path.controlClass) {
+      target = owner.querySelector("." + path.controlClass.split(/\s+/)[0]);
+    }
+    if (!target) {
+      target = owner.querySelector("a, button, [tabindex]");
+    }
+    if (target && typeof target.focus === "function") target.focus();
   }
 
   var source = new EventSource("/events");

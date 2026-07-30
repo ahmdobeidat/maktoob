@@ -48,7 +48,14 @@
       <li class="segment{{if .Suspect}} is-suspect{{end}}{{if .LowConf}} is-lowconf{{end}}{{if .Edited}} is-edited{{end}}"
           id="seg-{{.ID}}" data-segment-id="{{.ID}}" data-start="{{.Start}}">
 
-        <div class="segment-controls" dir="{{$.Loc.Dir}}">
+        <!--
+          Seeking and correcting are both driven by script. Rendered hidden and
+          revealed by app.js, because with JavaScript blocked these are buttons
+          that focus, accept a keypress and do nothing — on a forty-line
+          transcript that is eighty dead tab stops between the reader and the
+          export links.
+        -->
+        <div class="segment-controls" dir="{{$.Loc.Dir}}" data-js-only hidden>
           <button type="button" class="seek" data-start="{{.Start}}">
             <span class="visually-hidden">{{$.Loc.PlayFrom}} </span>
             <span class="timecode" dir="ltr">{{.Timecode}}</span>
@@ -77,24 +84,24 @@
   </ol>
 
 {{else}}
-  <p class="empty">{{.Loc.NoSpeech}}</p>
+  <!--
+    An empty segment list means four different things, and only one of them is
+    "there was no speech". Saying that while the note is still queued tells a
+    deaf user their voice note was silent when nothing has run yet.
+  -->
+  {{if .Note.Pending}}
+    <p class="empty" role="status">{{.Loc.StillTranscribing}}</p>
+  {{else if .Note.Failed}}
+    <p class="empty">{{.Loc.CouldNotTranscribe}}</p>
+    {{if .Note.Error}}<p class="note-error"><bdi>{{.Note.Error}}</bdi></p>{{end}}
+  {{else}}
+    <p class="empty">{{.Loc.NoSpeech}}</p>
+  {{end}}
 {{end}}
 
 <section class="exports" aria-label="{{.Loc.ExportJSON}}">
   <a class="button-link" href="/api/notes/{{.Note.ID}}/export?format=json">{{.Loc.ExportJSON}}</a>
   <a class="button-link" href="/api/notes/{{.Note.ID}}/export?format=md">{{.Loc.ExportMD}}</a>
 </section>
-
-<!--
-  Strings the script needs, passed as data attributes so the JavaScript holds no
-  user-facing text of its own and translating the Locale translates it too.
--->
-<div id="i18n" hidden
-     data-save="{{.Loc.Save}}"
-     data-cancel="{{.Loc.Cancel}}"
-     data-saving="{{.Loc.Saving}}"
-     data-save-failed="{{.Loc.SaveFailed}}"
-     data-edited="{{.Loc.EditedMark}}"
-     data-edit="{{.Loc.EditSegment}}"></div>
 
 {{end}}

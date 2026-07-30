@@ -9,8 +9,8 @@ cd maktoob
 ```
 
 The script checks your dependencies, builds `whisper-server` from whisper.cpp,
-downloads a model, and builds the maktoob binary. It prints the two commands to
-run when it finishes.
+downloads a model, and builds the maktoob binary. It prints the commands to run
+when it finishes.
 
 It never runs `sudo`. If a system package is missing it tells you the command
 for your package manager and stops, so you can read it before trusting it. It
@@ -98,16 +98,20 @@ MODEL=small ./scripts/setup.sh
 
 | Model | Size | Notes |
 |---|---|---|
-| `large-v3-turbo` | ~1.6 GB | The default. Best accuracy per unit of time on Arabic of the models tested here |
-| `small` | ~466 MB | Noticeably weaker on Levantine Arabic. Reasonable if disk or RAM is tight |
-| `tiny` | ~75 MB | For checking the pipeline runs. Not usable for real transcripts |
+| `large-v3-turbo` | ~1.6 GB | The default |
+| `small` | ~466 MB | Smaller and faster. Reasonable if disk or RAM is tight |
+| `tiny` | ~75 MB | For checking the pipeline runs end to end |
 
-**Accuracy on Levantine Arabic is not yet measured for this project.** Whisper
-is measurably weaker on Levantine than on English or Modern Standard Arabic, and
-until a word error rate is published in the README, treat every transcript as a
-draft to check against the audio rather than a record of what was said. The
-interface is built around that assumption: every line carries the model's own
-confidence, and lines that look fabricated are marked separately.
+**Accuracy on Levantine Arabic is not yet measured for this project, for any of
+these models.** The table above deliberately makes no accuracy claim: ranking
+them without a bake-off would be inventing the number this paragraph admits is
+missing. Whisper is known to be weaker on Levantine than on English or Modern
+Standard Arabic.
+
+Until a word error rate is published, treat every transcript as a draft to check
+against the audio rather than a record of what was said. The interface is built
+around that assumption: every line carries the model's own confidence, and lines
+that look fabricated are marked separately.
 
 ## CPU or GPU
 
@@ -129,7 +133,7 @@ Levantine voice notes:
 - **Latency: roughly 13–15 seconds per note**, and roughly flat across the note
   lengths tested rather than proportional to duration.
 
-These are the numbers from one machine on a small sample. They are here because
+That is a handful of notes on one machine, not a benchmark. It is here because
 "fast" is not a measurement. Word error rate is the number that matters most and
 it is **not yet measured** — see above.
 

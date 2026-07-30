@@ -31,6 +31,21 @@
 -->
 <div id="live" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
 
+<!--
+  Strings and direction for the script, so the JavaScript holds no user-facing
+  text of its own and translating the Locale translates it too. It lives in the
+  layout rather than one page because the live-update code runs on both.
+-->
+<div id="i18n" hidden
+     data-dir="{{.Loc.Dir}}"
+     data-save="{{.Loc.Save}}"
+     data-cancel="{{.Loc.Cancel}}"
+     data-saving="{{.Loc.Saving}}"
+     data-save-failed="{{.Loc.SaveFailed}}"
+     data-saved="{{.Loc.AnnounceSaved}}"
+     data-save-failed-announce="{{.Loc.AnnounceSaveFailed}}"
+     data-edit="{{.Loc.EditSegment}}"></div>
+
 <main id="main" class="wrap" tabindex="-1">
   {{template "content" .}}
 </main>

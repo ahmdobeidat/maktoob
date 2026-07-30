@@ -40,6 +40,7 @@ work. No browser reaches these routes without sending at least one of them.
 | `GET` | `/` | Note list (HTML), with search and chat filter |
 | `GET` | `/note/{id}` | One transcript (HTML) |
 | `GET` | `/events` | Server-sent events: arrivals and status changes |
+| `GET` | `/static/…` | Stylesheet and script, embedded in the binary |
 | `GET` | `/api/notes` | Note list, or search results, as JSON |
 | `GET` | `/api/notes/{id}` | One note with its segments, as JSON |
 | `GET` | `/api/notes/{id}/audio` | The original audio, with `Range` support |
@@ -57,7 +58,7 @@ Query parameters, all optional:
 |---|---|
 | `q` | Full-text search across transcripts. Arabic spelling variants are normalised, so hamza and teh marbuta do not have to match exactly. |
 | `chat` | Restrict to one chat id, as returned in `chat_id`. |
-| `limit` | Maximum results. Defaults to 100, capped at 1000. |
+| `limit` | Maximum results. Defaults to 100, capped at 1000. With `q`, it caps *matching segments* before they are grouped into notes and before `chat` is applied — so a narrow `chat` filter plus a small `limit` can return nothing while matches exist elsewhere. |
 
 Without `q`, returns notes newest first:
 
@@ -107,8 +108,10 @@ with three matching lines is one result, not three:
 ```
 
 `status` is one of `pending`, `converting`, `transcribing`, `done`, `failed`,
-`no_speech`. `no_speech` is a success: voice activity detection ran and found
-nothing to transcribe.
+`no_speech`. `no_speech` is a success rather than a failure: Whisper returned no
+segments at all, which is what a note containing only noise or silence looks
+like. It is a distinct state so that an empty transcript is never mistaken for a
+bug or for a failed one.
 
 ### `GET /api/notes/{id}`
 
@@ -161,10 +164,12 @@ language it was told to expect: point it at English audio with the language
 pinned to Arabic and it will produce fluent nonsense at 0.92–0.98 confidence.
 
 `suspect` is a separate and more serious signal. It marks likely fabrication —
-Whisper inventing fluent text over silence — using the model's no-speech
-probability. A fabrication usually carries *high* token confidence, which is
-exactly what makes it dangerous for a reader who cannot check the audio.
-Treat `suspect` as the stronger warning.
+Whisper inventing fluent text over silence. Three things can raise it: a high
+no-speech probability, a match against a list of known Whisper artifact phrases
+(the "thanks for watching" family), and a segment repeating the previous one
+verbatim. A fabrication usually carries *high* token confidence, which is
+exactly what makes it dangerous for a reader who cannot check the audio. Treat
+`suspect` as the stronger warning.
 
 ### `GET /api/notes/{id}/audio`
 
@@ -197,9 +202,12 @@ curl -X PATCH http://127.0.0.1:8765/api/segments/42 \
   -d '{"text":"the corrected line"}'
 ```
 
-Returns the segment as stored, including the `edited_at` timestamp the client
-did not send. Read the response rather than assuming the write took: it is the
-row, not an echo.
+Returns the segment as stored, including the `edited` flag the client did not
+send. Read the response rather than assuming the write took: it is the row, not
+an echo. (The response carries `edited` as a boolean; the exact `edited_at`
+timestamp appears in the export document, not here.)
+
+A zero-byte body is a `400`. Sending `{"text": ""}` is the undo described below.
 
 An empty or whitespace-only `text` means **undo**, not "store an empty line".
 The correction is withdrawn: the machine output is displayed again, `edited`
@@ -221,7 +229,11 @@ Returns `202` with `{"id": "...", "created": true}` when `Accept` includes
 `application/json`, and otherwise redirects to the new note's page, so the form
 works without JavaScript.
 
-`created: false` means the file was already stored — imports are deduplicated.
+`created` is currently always `true` for uploads. **Imports are not
+deduplicated**: the dedupe key is the WhatsApp message id, which a file upload
+does not have, so posting the same file twice creates two notes. Deduplication
+applies to the WhatsApp path only, where a message can legitimately arrive twice
+over reconnect.
 
 Uploads are capped at 64 MiB. The file is copied into your data directory and
 transcribed locally; it is not uploaded anywhere.
@@ -260,7 +272,10 @@ truth.
 
 ## Errors
 
-Errors are JSON on `/api/*` routes and plain text on HTML routes.
+Errors are JSON on `/api/*` routes, with two exceptions that return plain text:
+a `403` from the origin guard, and a `404` from
+`GET /api/notes/{id}/audio` when the file is missing from disk. Both are
+reached by a browser far more often than by a JSON client.
 
 | Status | Meaning |
 |---|---|

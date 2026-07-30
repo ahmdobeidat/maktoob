@@ -18,7 +18,12 @@ import (
 // the dependency would run backwards: deleting the WhatsApp adapter would then
 // break file imports and the web interface, which is the opposite of what the
 // architecture claims. CI enforces the direction.
-func newWASink(pl *pipeline.Pipeline, log *slog.Logger) wa.SinkFunc {
+// onIngest, when non-nil, is called with the stored note's id after a
+// successful ingest. It is how the web layer learns which note arrived: without
+// it the arrival event carried an empty id and a client could not resolve the
+// note it had just been told about. It is not called for a duplicate, because
+// nothing new arrived.
+func newWASink(pl *pipeline.Pipeline, log *slog.Logger, onIngest func(noteID string)) wa.SinkFunc {
 	return func(ctx context.Context, n wa.VoiceNote) error {
 		id, created, err := pl.IngestReader(ctx, n.Audio, waIngestRequest(n, time.Now()))
 		if err != nil {
@@ -27,6 +32,10 @@ func newWASink(pl *pipeline.Pipeline, log *slog.Logger) wa.SinkFunc {
 		if !created {
 			// Expected on reconnect rather than a fault worth reporting.
 			log.Debug("duplicate voice note ignored", "note", id)
+			return nil
+		}
+		if onIngest != nil {
+			onIngest(id)
 		}
 		return nil
 	}

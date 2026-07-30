@@ -54,7 +54,7 @@ func TestWorkerDrainsTheQueueThenIdles(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		runWorker(ctx, pl, quietLogger())
+		runWorker(ctx, nil, pl, quietLogger())
 	}()
 
 	// Five notes come back to back with no idle wait between them, so they are
@@ -88,7 +88,7 @@ func TestWorkerStopsPromptlyOnCancel(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		runWorker(ctx, pl, quietLogger())
+		runWorker(ctx, nil, pl, quietLogger())
 	}()
 
 	time.Sleep(20 * time.Millisecond)
@@ -111,7 +111,7 @@ func TestWorkerBacksOffOnRepeatedFailure(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
 
-	runWorker(ctx, pl, quietLogger())
+	runWorker(ctx, nil, pl, quietLogger())
 
 	// With a two-second backoff, 300ms of failures is one or two attempts. A
 	// spinning loop would be in the thousands.
@@ -126,11 +126,11 @@ func TestWorkerBacksOffOnRepeatedFailure(t *testing.T) {
 func TestSleepReportsCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if !sleep(ctx, time.Hour) {
+	if !sleep(ctx, nil, time.Hour) {
 		t.Error("sleep on a cancelled context did not report cancellation")
 	}
 
-	if sleep(context.Background(), time.Millisecond) {
+	if sleep(context.Background(), nil, time.Millisecond) {
 		t.Error("sleep that ran to completion reported cancellation")
 	}
 }

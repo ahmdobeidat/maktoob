@@ -284,6 +284,16 @@ func (s *Store) SetStatus(ctx context.Context, noteID, status, errMsg string) er
 	return nil
 }
 
+// SetModel records which model produced a transcript, so a note transcribed
+// under a different model can be identified after the fact.
+func (s *Store) SetModel(ctx context.Context, noteID, model string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE notes SET model = ? WHERE id = ?`, model, noteID)
+	if err != nil {
+		return fmt.Errorf("set model: %w", err)
+	}
+	return nil
+}
+
 // SetWavPath records the converted audio path.
 func (s *Store) SetWavPath(ctx context.Context, noteID, wavPath string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE notes SET wav_path = ? WHERE id = ?`, wavPath, noteID)

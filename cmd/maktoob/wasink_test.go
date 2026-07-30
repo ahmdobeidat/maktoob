@@ -145,7 +145,7 @@ func TestNewWASinkRecordsAndToleratesDuplicates(t *testing.T) {
 		Converter: stubConverter{},
 		MediaDir:  filepath.Join(dir, "media"),
 	}
-	sink := newWASink(pl, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	sink := newWASink(pl, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 
 	note := wa.VoiceNote{
 		ChatAlias: "chat-alias", ChatName: "Family",

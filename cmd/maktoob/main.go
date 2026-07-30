@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 )
 
@@ -50,6 +51,18 @@ func run(args []string) error {
 	}
 
 	command, rest := args[0], args[1:]
+
+	// Flags are parsed per subcommand, so they have to follow it. Someone who
+	// types `maktoob -data mine serve` out of habit would otherwise be told
+	// there is no command called "-data", which is true and useless. Say what
+	// to type instead.
+	if strings.HasPrefix(command, "-") && !isHelpFlag(command) {
+		if sub := firstNonFlag(args); sub != "" {
+			return fmt.Errorf("flags go after the command: try `maktoob %s %s`",
+				sub, strings.Join(without(args, sub), " "))
+		}
+		return fmt.Errorf("no command given; flags go after the command\n\n%s", usage)
+	}
 
 	fs := flag.NewFlagSet(command, flag.ContinueOnError)
 	dataDir := fs.String("data", "data", "directory for media, database and session state")
@@ -122,6 +135,43 @@ func run(args []string) error {
 	default:
 		return fmt.Errorf("unknown command %q\n\n%s", command, usage)
 	}
+}
+
+func isHelpFlag(s string) bool {
+	return s == "-h" || s == "--help" || s == "-help"
+}
+
+// firstNonFlag finds the subcommand hiding behind a leading flag.
+//
+// It has to skip a flag's value as well as the flag: in `-data mine serve`,
+// "mine" is not the command. Boolean flags take no value, so they are listed
+// rather than guessed — treating -verbose as consuming "serve" would point the
+// user at the wrong fix.
+func firstNonFlag(args []string) string {
+	boolFlags := map[string]bool{"-verbose": true, "-yes": true}
+
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if !strings.HasPrefix(a, "-") {
+			return a
+		}
+		// `-data=mine` carries its value already.
+		if strings.Contains(a, "=") || boolFlags[a] {
+			continue
+		}
+		i++ // skip the value
+	}
+	return ""
+}
+
+func without(args []string, drop string) []string {
+	out := make([]string, 0, len(args))
+	for _, a := range args {
+		if a != drop {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 type config struct {

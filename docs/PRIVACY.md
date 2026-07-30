@@ -26,17 +26,28 @@ While maktoob is running, it connects to:
 2. **Meta's media CDN**, to download the audio of a voice note. That audio is
    already on Meta's servers; this is the same fetch your phone makes.
 
-And once, at install time:
+That is the complete list **for the running program**.
 
-3. **The Whisper model download**, from Hugging Face, run by `scripts/setup.sh`.
+Installing is separate, and `scripts/setup.sh` reaches three more places. They
+are listed because "exhaustively" has to mean exhaustively:
 
-That is the complete list. There is no analytics endpoint, no crash reporter, no
-update check, and no third-party transcription API. The web interface sends a
+3. **github.com**, to clone whisper.cpp.
+4. **proxy.golang.org and sum.golang.org**, to fetch and verify Go
+   dependencies. There is no vendored module directory in this repository.
+5. **huggingface.co**, for the Whisper model, fetched by whisper.cpp's own
+   download script.
+
+You can watch all three: the script prints what it is doing and never runs
+`sudo`.
+
+There is no analytics endpoint, no crash reporter, no update check, and no
+third-party transcription API. The web interface sends a
 `Content-Security-Policy` that forbids every remote origin, so you can confirm
 in your browser's network tab that the page loads nothing from anywhere.
 
 If you never pair a WhatsApp account and use `maktoob import` on files, maktoob
-makes no network connections at all after installation.
+makes no connection that leaves this machine. It does open one loopback
+connection, to `whisper-server` on `127.0.0.1:8642`.
 
 ## Transcription is local
 
@@ -56,7 +67,8 @@ GPU. No audio leaves the machine at any point in that pipeline.
 maktoob keeps incoming voice notes and discards everything else. **That is a
 policy, not a capability boundary.** The session could read all of it; the code
 chooses not to. You are trusting the code, and the code is there for you to
-read — `internal/wa/filter.go` is the whole of it, and it is forty lines.
+read: the whole decision is one 26-line function, `voiceNote` in
+`internal/wa/filter.go`.
 
 To be exact about what it keeps and drops. It keeps push-to-talk audio messages
 from other people, in every chat — there is no per-chat allowlist, so pairing
@@ -84,6 +96,12 @@ obtains only the database.
 The sender's *display name* is stored as-is, because a transcript with no
 indication of who spoke is not usable.
 
+**A linked device is visible to the people messaging you, in one respect.**
+whatsmeow acknowledges messages at the protocol level as it decrypts them, so
+running maktoob makes voice notes show as *delivered* to the sender even when
+your phone is closed. maktoob never marks anything as *read* and never sends a
+message, but the delivery receipt is not something it can decline to send.
+
 This reduces the harm of a leaked database. It does not make storing other
 people's voice notes consensual. Use judgement.
 
@@ -95,7 +113,8 @@ Everything maktoob stores lives under one directory, `data/` by default:
 |---|---|
 | `data/media/` | The original audio, exactly as received |
 | `data/maktoob.db` | Transcripts, corrections, and the search index |
-| `data/session.db` | The WhatsApp session |
+| `data/session.db` | The WhatsApp session — **including your contacts' phone numbers in plain text** |
+| `data/*.db-wal`, `*.db-shm` | SQLite sidecars, holding recently committed transcripts |
 | `data/salt` | The key your contact aliases are derived from |
 
 **None of it is encrypted.** maktoob relies on your operating system's file
@@ -107,6 +126,13 @@ backups — can.
 copies that file can impersonate your WhatsApp account. Backing up `data/` backs
 up your credentials. It is gitignored so it cannot be committed by accident, but
 nothing stops a general-purpose backup tool from sweeping it up.
+
+It also holds a **contact table written by whatsmeow** — real phone-number
+identifiers with names against them. This qualifies the aliasing above and it
+would be dishonest to leave it out: the transcript database cannot be linked
+back to phone numbers on its own, but the file sitting next to it in the same
+directory contains them directly. The aliasing limits what a leaked *database*
+discloses. It does not make `data/` safe to share.
 
 ## Deleting your data
 
