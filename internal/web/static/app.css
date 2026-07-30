@@ -416,6 +416,18 @@ button.secondary, .button-link.secondary {
   color: var(--warn);
 }
 .segment.is-suspect .markers { color: var(--danger); }
+/* The number behind the word. A reader who cannot check the audio deserves to
+   know whether "low confidence" meant 45% or 4%. */
+.confidence { font-weight: 400; color: var(--ink-muted); }
+
+/* The no-JavaScript correction path. Hidden by app.js when the richer inline
+   editor is available, so the same action is never offered twice. */
+.segment-fallback { margin-block-start: 0.4rem; font-family: var(--font-ui); font-size: 0.85rem; }
+.segment-fallback summary { cursor: pointer; color: var(--ink-muted); font-weight: 600; }
+.segment-fallback summary:hover { color: var(--ink); }
+.segment-fallback form { display: grid; gap: 0.5rem; margin-block-start: 0.5rem; }
+.segment-fallback textarea { font-family: var(--font-ar); font-size: 1.05rem; }
+.segment-fallback button { justify-self: start; }
 
 .segment-actions { margin-block-start: 0.4rem; }
 .segment-actions button {

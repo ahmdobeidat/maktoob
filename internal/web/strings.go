@@ -65,6 +65,8 @@ type Locale struct {
 	LowConfMark        string
 	SuspectMark        string
 	MarksLegend        string
+	ConfidenceIs       string
+	ExportSection      string
 	ExportJSON         string
 	ExportMD           string
 	AudioMissing       string
@@ -147,6 +149,8 @@ var English = Locale{
 	LowConfMark:        "low confidence",
 	SuspectMark:        "possible fabrication",
 	MarksLegend:        "Lines marked low confidence or possible fabrication should be checked against the audio before you rely on them.",
+	ConfidenceIs:       "model confidence",
+	ExportSection:      "Export this transcript",
 	ExportJSON:         "Export as JSON",
 	ExportMD:           "Export as Markdown",
 	AudioMissing:       "The audio for this note is not on disk.",

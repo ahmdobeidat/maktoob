@@ -16,7 +16,7 @@
     <select id="chat" name="chat">
       <option value="">{{.Loc.AllChats}}</option>
       {{range .Chats}}
-        <option value="{{.ID}}" {{if eq .ID $.ChatID}}selected{{end}}>{{.Name}} ({{.Notes}})</option>
+        <option value="{{.ID}}" {{if eq .ID $.ChatID}}selected{{end}}>{{isolate .Name}} ({{isolate .Notes}})</option>
       {{end}}
     </select>
   </div>

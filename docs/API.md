@@ -46,6 +46,7 @@ work. No browser reaches these routes without sending at least one of them.
 | `GET` | `/api/notes/{id}/audio` | The original audio, with `Range` support |
 | `GET` | `/api/notes/{id}/export` | One note as a JSON or Markdown download |
 | `PATCH` | `/api/segments/{id}` | Save a correction to one line |
+| `POST` | `/segments/{id}` | The same, form-encoded, for browsers without JavaScript |
 | `POST` | `/import` | Upload an audio file for transcription |
 
 ---
@@ -91,8 +92,11 @@ with three matching lines is one result, not three:
       "matches": [
         {
           "id": 42,
+          "note_id": "8f2c1a...",
           "idx": 1,
           "start_ms": 4000,
+          "end_ms": 9000,
+          "start": 4.0,
           "timecode": "0:04",
           "text": "...",
           "edited": false,
@@ -215,6 +219,19 @@ goes back to `false`, and the line becomes findable by its original text once
 more. Storing the empty string instead would leave the row flagged as corrected
 forever and drop it out of the search index entirely.
 
+### `POST /segments/{id}`
+
+The progressive-enhancement twin of the `PATCH` above. Takes
+`application/x-www-form-urlencoded` with a `text` field, saves the same way, and
+answers `303` back to `/note/{noteID}#seg-{id}`.
+
+The redirect target is derived from the segment's stored row. There is no
+"return to" parameter, because that is an open redirect with a friendly name.
+
+It exists so the transcript page works with scripts blocked: the markup ships a
+native `<details>` disclosure wrapping this form, and the script hides it and
+offers the inline editor instead.
+
 ### `POST /import`
 
 `multipart/form-data` with the file in a field named `audio`.
@@ -250,8 +267,9 @@ event: updated
 data: {"kind":"updated","note_id":"8f2c1a...","status":"done","text":"transcribed"}
 ```
 
-`arrived` fires when a note is accepted and queued. `updated` fires when it
-reaches a terminal state. A comment line (`: ping`) is sent every 25 seconds to
+`arrived` fires when a note is accepted and queued. `updated` fires when a note
+reaches a terminal state, and also when one of its lines is corrected — any tab
+showing that note needs to re-read it either way. A comment line (`: ping`) is sent every 25 seconds to
 keep intermediaries from dropping an idle stream.
 
 **Events can be dropped.** The stream is a notification channel, not a

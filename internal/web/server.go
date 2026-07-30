@@ -138,6 +138,10 @@ func (s *Server) routes() {
 	mux.HandleFunc("GET /api/notes/{id}/audio", s.handleAudio)
 	mux.HandleFunc("GET /api/notes/{id}/export", s.handleExport)
 	mux.HandleFunc("PATCH /api/segments/{id}", s.guard(s.handlePatchSegment))
+	// The form-encoded twin of the PATCH above, for browsers with the script
+	// blocked. It exists so that "every page works without JavaScript" is a
+	// true statement about this interface rather than an aspiration.
+	mux.HandleFunc("POST /segments/{id}", s.guard(s.handleFormSegment))
 	mux.HandleFunc("POST /import", s.guard(s.handleImport))
 
 	mux.Handle("GET /static/", http.FileServerFS(assets))
@@ -454,6 +458,55 @@ func (s *Server) handlePatchSegment(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, newSegmentView(seg, s.loc))
 }
 
+// handleFormSegment saves a correction submitted as an ordinary HTML form and
+// sends the reader back to the line they edited.
+//
+// The redirect target is derived from the segment's own row, never from the
+// request. A "return to" parameter would have been convenient and would have
+// been an open redirect.
+func (s *Server) handleFormSegment(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "bad segment id", http.StatusBadRequest)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "could not read the form", http.StatusBadRequest)
+		return
+	}
+
+	// Read the segment first, so a failed edit still knows which page to return
+	// to and the reader is not dropped on an error screen with no way back.
+	seg, err := s.store.GetSegment(ctx, id)
+	if errors.Is(err, store.ErrNotFound) {
+		s.notFound(w, r)
+		return
+	}
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	text := r.PostFormValue("text")
+	if len(text) > maxCorrectionBytes {
+		text = text[:maxCorrectionBytes]
+	}
+
+	if err := s.store.EditSegment(ctx, id, text); err != nil && !errors.Is(err, store.ErrNotFound) {
+		s.fail(w, r, err)
+		return
+	}
+
+	s.broker.Publish(Event{Kind: KindUpdated, NoteID: seg.NoteID})
+
+	http.Redirect(w, r,
+		"/note/"+url.PathEscape(seg.NoteID)+"#seg-"+strconv.FormatInt(id, 10),
+		http.StatusSeeOther)
+}
+
 func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
 	if s.pipe == nil {
 		writeJSON(w, http.StatusServiceUnavailable,
@@ -507,8 +560,9 @@ func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	// A browser form post without JavaScript lands back on the list, where the
-	// new note is already visible. The fetch path reads the JSON instead.
+	// A browser form post without JavaScript lands on the new note's page, so
+	// the reader watches it transcribe rather than hunting for it in the list.
+	// The fetch path reads the JSON instead.
 	if strings.Contains(r.Header.Get("Accept"), "application/json") {
 		writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "created": created})
 		return

@@ -19,7 +19,13 @@
       <span class="brand-tagline">{{.Loc.Tagline}}</span>
     </a>
     {{if .WAState}}
-      <p class="wa-state" role="status">{{.WAState}}</p>
+      <!--
+        Deliberately not role="status". This is rendered once at page load and
+        nothing updates it, so announcing it as a live region would promise a
+        screen reader it is being kept current when it is not. It is a fact
+        about when the page was loaded, and it says so.
+      -->
+      <p class="wa-state">{{.WAState}}</p>
     {{end}}
   </div>
 </header>

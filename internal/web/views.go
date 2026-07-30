@@ -1,6 +1,7 @@
 package web
 
 import (
+	"fmt"
 	"html/template"
 	"time"
 
@@ -214,6 +215,15 @@ func funcMap() template.FuncMap {
 			return out
 		},
 		"gt0": func(n int) bool { return n > 0 },
+		// isolate wraps text in Unicode directional isolates. <option> content
+		// is text-only, so <bdi> is not available there — an Arabic chat name
+		// followed by "(12)" reorders and the count lands on the wrong side.
+		// Takes any value because it wraps counts as well as names, and a
+		// signature of string would have failed at render time rather than at
+		// compile time.
+		"isolate": func(v any) string {
+			return "\u2068" + fmt.Sprint(v) + "\u2069"
+		},
 	}
 }
 
