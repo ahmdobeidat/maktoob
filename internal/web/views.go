@@ -3,6 +3,7 @@ package web
 import (
 	"fmt"
 	"html/template"
+	"strings"
 	"time"
 
 	"github.com/ahmdobeidat/maktoob/internal/export"
@@ -32,6 +33,10 @@ type noteView struct {
 	Error       string
 	Pending     bool
 	Failed      bool
+	// Preview is the first line of the transcript, trimmed for the list. It is
+	// Arabic, so the template gives it its own direction.
+	Preview string
+	Model   string
 }
 
 func newNoteView(n store.Note, loc Locale) noteView {
@@ -53,8 +58,28 @@ func newNoteView(n store.Note, loc Locale) noteView {
 		Pending: n.Status == store.StatusPending ||
 			n.Status == store.StatusConverting ||
 			n.Status == store.StatusTranscribing,
-		Failed: n.Status == store.StatusFailed,
+		Failed:  n.Status == store.StatusFailed,
+		Preview: previewLine(n.Preview),
+		Model:   n.Model,
 	}
+}
+
+// previewMax is how much of the first line the list shows. Long enough to tell
+// two notes apart, short enough that the list stays a list.
+const previewMax = 140
+
+// previewLine trims the first transcript line for display.
+//
+// Truncation is on a rune boundary, not a byte: Arabic is multi-byte
+// throughout, and cutting mid-rune renders a replacement character in the one
+// place the project cannot afford to look broken.
+func previewLine(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	runes := []rune(s)
+	if len(runes) <= previewMax {
+		return s
+	}
+	return strings.TrimSpace(string(runes[:previewMax])) + "\u2026"
 }
 
 // segmentView is one transcript line prepared for display.
@@ -158,6 +183,10 @@ type apiNote struct {
 	DurationMS int64     `json:"duration_ms"`
 	Status     string    `json:"status"`
 	Error      string    `json:"error,omitempty"`
+	// Preview is the first line of the transcript, the same text the HTML list
+	// shows. Carried so a client listing notes does not have to fetch each one
+	// to display anything meaningful.
+	Preview string `json:"preview,omitempty"`
 }
 
 func newAPINote(n store.Note) apiNote {
@@ -171,6 +200,7 @@ func newAPINote(n store.Note) apiNote {
 		DurationMS: n.DurationMS,
 		Status:     n.Status,
 		Error:      n.Error,
+		Preview:    previewLine(n.Preview),
 	}
 }
 
@@ -194,6 +224,7 @@ func newAPIHitGroup(g hitGroup) apiHitGroup {
 			DurationMS: g.Note.DurationMS,
 			Status:     g.Note.Status,
 			Error:      g.Note.Error,
+			Preview:    g.Note.Preview,
 		},
 		Matches: g.Matches,
 	}

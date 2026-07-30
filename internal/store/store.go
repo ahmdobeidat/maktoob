@@ -43,6 +43,10 @@ type Note struct {
 	Attempts    int
 	Error       string
 	Model       string
+
+	// Preview is the first line of the transcript, populated only by the list
+	// queries. GetNote leaves it empty because the caller has every segment.
+	Preview string
 }
 
 // Segment is one transcribed span of a note.

@@ -36,7 +36,6 @@ type Locale struct {
 	ImportLabel   string
 	ImportButton  string
 	ImportHint    string
-	LiveRegion    string
 	SkipToContent string
 
 	NoteHeading string
@@ -125,7 +124,6 @@ var English = Locale{
 	ImportLabel:   "Choose an audio file",
 	ImportButton:  "Transcribe",
 	ImportHint:    "The file is copied into your data directory and transcribed locally. It is not uploaded anywhere.",
-	LiveRegion:    "Live updates",
 	SkipToContent: "Skip to main content",
 
 	NoteHeading:        "Voice note",

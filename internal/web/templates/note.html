@@ -10,6 +10,9 @@
   <dt>{{.Loc.Received}}</dt>
   <dd><time datetime="{{.Note.ReceivedISO}}" dir="ltr">{{.Note.Received}}</time></dd>
   <dt>{{.Loc.Length}}</dt><dd dir="ltr">{{.Note.Duration}}</dd>
+  {{if .Note.Model}}
+    <dt>{{.Loc.Model}}</dt><dd><bdi>{{.Note.Model}}</bdi></dd>
+  {{end}}
   <dt>{{.Loc.Status}}</dt>
   <dd>
     <span class="status status-{{.Note.Status}}">{{.Note.StatusLabel}}</span>
