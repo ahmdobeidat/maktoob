@@ -201,7 +201,11 @@ Returns the segment as stored, including the `edited_at` timestamp the client
 did not send. Read the response rather than assuming the write took: it is the
 row, not an echo.
 
-An empty `text` clears the correction and restores the machine output.
+An empty or whitespace-only `text` means **undo**, not "store an empty line".
+The correction is withdrawn: the machine output is displayed again, `edited`
+goes back to `false`, and the line becomes findable by its original text once
+more. Storing the empty string instead would leave the row flagged as corrected
+forever and drop it out of the search index entirely.
 
 ### `POST /import`
 

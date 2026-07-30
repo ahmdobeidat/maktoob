@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -432,9 +433,23 @@ func (s *Store) EditSegment(ctx context.Context, segmentID int64, text string) e
 	}
 	defer tx.Rollback()
 
-	res, err := tx.ExecContext(ctx,
-		`UPDATE segments SET edited_text = ?, edited_at = ? WHERE id = ?`,
-		text, time.Now().UnixMilli(), segmentID)
+	// An empty correction means "undo", not "store an empty line". Writing it
+	// through as an edit would leave the row flagged as corrected forever and,
+	// worse, index the empty string — which silently drops the line out of
+	// search, because the machine text it used to be findable by is no longer
+	// in the index. Reverting restores both the text and its searchability.
+	revert := strings.TrimSpace(text) == ""
+
+	var res sql.Result
+	if revert {
+		res, err = tx.ExecContext(ctx,
+			`UPDATE segments SET edited_text = NULL, edited_at = NULL WHERE id = ?`,
+			segmentID)
+	} else {
+		res, err = tx.ExecContext(ctx,
+			`UPDATE segments SET edited_text = ?, edited_at = ? WHERE id = ?`,
+			text, time.Now().UnixMilli(), segmentID)
+	}
 	if err != nil {
 		return fmt.Errorf("edit segment: %w", err)
 	}
@@ -442,10 +457,20 @@ func (s *Store) EditSegment(ctx context.Context, segmentID int64, text string) e
 		return ErrNotFound
 	}
 
+	// What gets indexed is what Text() will display, so a reverted segment is
+	// findable by its machine output again.
+	indexed := text
+	if revert {
+		if err := tx.QueryRowContext(ctx,
+			`SELECT asr_text FROM segments WHERE id = ?`, segmentID).Scan(&indexed); err != nil {
+			return fmt.Errorf("edit segment: read original: %w", err)
+		}
+	}
+
 	if _, err := tx.ExecContext(ctx, `DELETE FROM segments_fts WHERE rowid = ?`, segmentID); err != nil {
 		return fmt.Errorf("edit segment: clear index: %w", err)
 	}
-	if err := indexSegment(ctx, tx, segmentID, text); err != nil {
+	if err := indexSegment(ctx, tx, segmentID, indexed); err != nil {
 		return err
 	}
 

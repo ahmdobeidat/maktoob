@@ -295,3 +295,56 @@ func TestCountNotesByStatus(t *testing.T) {
 		t.Errorf("failed = %d, want 1", counts[StatusFailed])
 	}
 }
+
+// Clearing a correction has to restore the machine output *and* its place in
+// the search index. An earlier version wrote the empty string through as an
+// edit, which left the row flagged as corrected and indexed nothing — so the
+// line silently stopped being findable by the text it had reverted to.
+func TestClearingACorrectionRestoresTheOriginalAndItsSearchability(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	seedChatNote(t, s, "n1", "chat-a", "Chat A", time.Now())
+
+	if err := s.ReplaceSegments(ctx, "n1", []Segment{
+		{Idx: 0, StartMS: 0, EndMS: 1000, ASRText: "originalword", AvgLogprob: -0.1},
+	}); err != nil {
+		t.Fatalf("segments: %v", err)
+	}
+	segs, err := s.segmentsFor(ctx, "n1")
+	if err != nil {
+		t.Fatalf("segments: %v", err)
+	}
+	id := segs[0].ID
+
+	if err := s.EditSegment(ctx, id, "correctedword"); err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+	if hits, _ := s.Search(ctx, "correctedword", 10); len(hits) != 1 {
+		t.Fatalf("correction is not searchable: %d hits", len(hits))
+	}
+
+	if err := s.EditSegment(ctx, id, "   "); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+
+	got, err := s.GetSegment(ctx, id)
+	if err != nil {
+		t.Fatalf("get segment: %v", err)
+	}
+	if got.Text() != "originalword" {
+		t.Errorf("Text() = %q, want the machine output back", got.Text())
+	}
+	if got.Edited() {
+		t.Error("segment is still flagged as edited after the correction was cleared")
+	}
+	if got.ASRText != "originalword" {
+		t.Errorf("ASRText = %q, the machine output was overwritten", got.ASRText)
+	}
+
+	if hits, _ := s.Search(ctx, "originalword", 10); len(hits) != 1 {
+		t.Errorf("reverted line is not findable by its original text: %d hits", len(hits))
+	}
+	if hits, _ := s.Search(ctx, "correctedword", 10); len(hits) != 0 {
+		t.Errorf("the withdrawn correction is still in the search index: %d hits", len(hits))
+	}
+}

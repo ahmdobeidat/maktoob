@@ -18,6 +18,7 @@ type noteView struct {
 	ID          string
 	Href        string
 	Chat        string
+	ChatID      string
 	Sender      string
 	Source      string
 	ReceivedAt  time.Time
@@ -37,6 +38,7 @@ func newNoteView(n store.Note, loc Locale) noteView {
 		ID:          n.ID,
 		Href:        "/note/" + n.ID,
 		Chat:        chatName(n),
+		ChatID:      n.ChatID,
 		Sender:      senderName(n),
 		Source:      n.Source,
 		ReceivedAt:  n.ReceivedAt,
@@ -179,8 +181,12 @@ type apiHitGroup struct {
 func newAPIHitGroup(g hitGroup) apiHitGroup {
 	return apiHitGroup{
 		Note: apiNote{
-			ID:         g.Note.ID,
-			Chat:       g.Note.Chat,
+			ID:   g.Note.ID,
+			Chat: g.Note.Chat,
+			// Carried so a client can feed a search result straight back into
+			// the chat filter. Omitting it made the two list shapes disagree
+			// about what a note is.
+			ChatID:     g.Note.ChatID,
 			Sender:     g.Note.Sender,
 			Source:     g.Note.Source,
 			ReceivedAt: g.Note.ReceivedAt,

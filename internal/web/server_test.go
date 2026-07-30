@@ -656,3 +656,42 @@ func TestParseLimit(t *testing.T) {
 		}
 	}
 }
+
+// Both list shapes have to describe a note the same way. A search result
+// without chat_id cannot be fed back into the chat filter the same endpoint
+// documents, which makes the two halves of one API disagree.
+func TestSearchResultsCarryTheSameNoteFieldsAsTheList(t *testing.T) {
+	f := newFixture(t).seed()
+
+	list := f.do(http.MethodGet, "/api/notes", nil)
+	search := f.do(http.MethodGet, "/api/notes?q="+arabicHello, nil)
+
+	var listed struct {
+		Notes []map[string]any `json:"notes"`
+	}
+	var found struct {
+		Results []struct {
+			Note map[string]any `json:"note"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(list.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("unmarshal list: %v", err)
+	}
+	if err := json.Unmarshal(search.Body.Bytes(), &found); err != nil {
+		t.Fatalf("unmarshal search: %v", err)
+	}
+	if len(listed.Notes) == 0 || len(found.Results) == 0 {
+		t.Fatal("fixture produced no note in one of the two shapes")
+	}
+
+	for key, want := range listed.Notes[0] {
+		got, ok := found.Results[0].Note[key]
+		if !ok {
+			t.Errorf("search result is missing %q, which the list includes", key)
+			continue
+		}
+		if got != want {
+			t.Errorf("%q = %v in search, %v in list", key, got, want)
+		}
+	}
+}
