@@ -10,6 +10,11 @@ transcript is sent to any third party.
 > **Status: in active development** during the JOSA Reclaim Hackathon
 > (18 July – 1 August 2026). This README describes what is built; features still
 > in progress are marked as such in [the design spec](docs/superpowers/specs/2026-07-24-maktoob-design.md).
+>
+> **Not yet measured: word error rate on Levantine Arabic.** It is the number
+> that decides whether a transcript here is a document or a draft, and it is
+> stated as unmeasured rather than estimated. See *The transcript is a view onto
+> the audio* below.
 
 ---
 
@@ -80,6 +85,10 @@ README rather than described in adjectives.
 
 ## Privacy
 
+The full document is **[docs/PRIVACY.md](docs/PRIVACY.md)** — what is stored,
+where, what pairing actually grants, and what maktoob cannot protect you from.
+The short version:
+
 - **Outbound connections, exhaustively:** WhatsApp and Meta's media CDN (where the
   audio already lives), and a one-time model download at install. Nothing else. No
   telemetry, no analytics, no transcription service.
@@ -94,12 +103,13 @@ README rather than described in adjectives.
   account's **identity keys** — anyone who copies it can impersonate your WhatsApp.
   It is created `0700`, the files inside it `0600`, and it is gitignored. Backing
   it up copies your credentials.
-- **Unlinking is available today:** `maktoob logout` revokes the companion session
-  and leaves your transcripts alone. Deleting stored data is `rm -rf data/`, which
-  is the whole of it — there is no hidden state anywhere else on the machine. A
-  `maktoob purge` command that does this for you is on the roadmap below and is
-  **not built yet**; until it is, this bullet describes a directory, not a
-  feature.
+- **Unlinking and deletion:** `maktoob logout` revokes the companion session and
+  leaves your transcripts alone. `maktoob purge` deletes the media, the
+  database, its write-ahead log, the session and the alias salt — it shows you
+  the list first and makes you type `yes`. Run `logout` **before** `purge`:
+  deleting the local session does not tell WhatsApp anything, so purging first
+  leaves a live linked device on your account. There is no hidden state anywhere
+  else on the machine.
 - **Verbose logging is off by default:** `-verbose` forwards whatsmeow's own
   diagnostics to stderr, and those contain contacts' phone numbers in the clear.
   Do not use it where stderr is redirected to a file or captured by a service
@@ -118,57 +128,56 @@ transcription, search, correction, export — keeps working.
 
 ## Install
 
-Requires Go 1.25+, `ffmpeg`, and a built `whisper-server` from whisper.cpp.
-
 ```sh
-# system dependencies (Debian/Ubuntu)
-sudo apt-get install -y cmake ffmpeg
-
-# build maktoob
-go build ./cmd/maktoob
+git clone https://github.com/ahmdobeidat/maktoob
+cd maktoob
+./scripts/setup.sh
 ```
 
-Then build `whisper-server` and fetch a model per whisper.cpp's own
-instructions, start it, and point maktoob at it with `-asr`.
+The script checks dependencies, builds `whisper-server` from whisper.cpp,
+downloads a model, and builds maktoob. It never runs `sudo` and never pairs an
+account — it prints the package command for your system and stops.
 
-A `scripts/setup.sh` that does the whisper.cpp build and model download in one
-step, and a `docs/INSTALL.md` covering the CPU/GPU decision and expected
-transcription latency, are still to be written. Neither exists yet, so nothing
-above tells you to run them.
+Requires Go 1.25+, `ffmpeg`, `cmake`, and about 4 GB of disk for the model and
+the build tree. Full detail, including model choice, troubleshooting and
+uninstall, is in **[docs/INSTALL.md](docs/INSTALL.md)**.
 
 ## Usage
 
-Built and working today:
-
 ```sh
-maktoob pair                   # link a WhatsApp account (prints a QR code)
+maktoob serve                  # read your notes in a browser (127.0.0.1:8765)
 maktoob import <file>          # transcribe an audio file directly
 maktoob list                   # show stored notes
 maktoob show <id>              # show one transcript
+maktoob export <id>            # write one transcript to stdout as JSON or Markdown
+maktoob pair                   # link a WhatsApp account (prints a QR code)
 maktoob logout                 # revoke the WhatsApp companion session
+maktoob purge                  # delete every stored note, the session, and the salt
 ```
 
-Roadmap, not yet built — listed so the gap between the design and the code is
-visible rather than implied:
+`maktoob serve` is the main interface: the note list, Arabic search, the audio
+player, and inline correction. New notes appear live over SSE.
 
-```sh
-maktoob serve                  # local web UI on 127.0.0.1:8080
-maktoob export --all           # export everything as JSON or Markdown
-maktoob purge                  # delete all stored media and transcripts
-```
+Everything except `pair` and `logout` works with no WhatsApp account at all.
 
 ## Extending it
 
-maktoob is meant to be a component, not a silo. This section describes the
-intended shape of the web layer, which is **not built yet** — it ships with
-`maktoob serve`:
+maktoob is meant to be a component, not a silo.
 
-- **HTTP API** — to be documented in `docs/API.md`.
-- **Live event stream** — `GET /events` (Server-Sent Events) pushes each transcript
-  as it completes.
-- **Local hook** — `--on-transcript <command>` pipes the transcript JSON to any
-  program on stdin. No network, no webhook signing problem, no retry semantics.
-- **Export** — JSON and Markdown, per note or in bulk.
+- **HTTP API** — documented in **[docs/API.md](docs/API.md)**. Read the note
+  list, search, fetch a single transcript, save a correction, upload a file.
+- **Live event stream** — `GET /events` (Server-Sent Events) pushes each note as
+  it arrives and again as it completes.
+- **Export** — JSON and Markdown, from the interface, the API, or the CLI. The
+  JSON export and the read API return the same document, so a client that reads
+  one reads the other. Neither contains a filesystem path.
+
+There are deliberately **no outbound webhooks**. A fire-and-forget webhook with
+no signature and no retry is a weaker extensibility story than none at all; poll
+the API or read the event stream.
+
+Bulk export (`--all`) is not built. `maktoob export <id>` handles one note, and
+the API will list them for you to iterate.
 
 ## Why not on the phone?
 

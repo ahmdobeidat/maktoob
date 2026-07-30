@@ -108,13 +108,13 @@ func TestJSONPrefersEditedTextButKeepsTheOriginal(t *testing.T) {
 // readable export.
 func TestJSONKeepsArabicReadable(t *testing.T) {
 	n, _ := sampleNote()
-	segs := []store.Segment{{Idx: 0, ASRText: "مرحبا كيف حالك", AvgLogprob: -0.1}}
+	segs := []store.Segment{{Idx: 0, ASRText: "\u0645\u0631\u062D\u0628\u0627 \u0643\u064A\u0641 \u062D\u0627\u0644\u0643", AvgLogprob: -0.1}}
 
 	var buf bytes.Buffer
 	if err := JSON(&buf, n, segs); err != nil {
 		t.Fatalf("JSON: %v", err)
 	}
-	if !strings.Contains(buf.String(), "مرحبا كيف حالك") {
+	if !strings.Contains(buf.String(), "\u0645\u0631\u062D\u0628\u0627 \u0643\u064A\u0641 \u062D\u0627\u0644\u0643") {
 		t.Errorf("Arabic text was escaped out of the export:\n%s", buf.String())
 	}
 }
