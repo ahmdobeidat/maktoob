@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -320,4 +322,257 @@ func (s *Store) countMatches(ctx context.Context, userQuery string) (int, error)
 	err := s.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM segments_fts WHERE segments_fts MATCH ?`, q).Scan(&n)
 	return n, err
+}
+
+func TestOpenAddsSenderNameToExistingDatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old.db")
+
+	// Build a database shaped the way D1 left it: notes without sender_name.
+	raw, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = raw.Exec(`
+		CREATE TABLE notes (
+		  id            TEXT PRIMARY KEY,
+		  chat_id       TEXT NOT NULL,
+		  source        TEXT NOT NULL,
+		  sender        TEXT,
+		  wa_message_id TEXT UNIQUE,
+		  media_path    TEXT NOT NULL,
+		  wav_path      TEXT,
+		  duration_ms   INTEGER NOT NULL DEFAULT 0,
+		  received_at   INTEGER NOT NULL,
+		  status        TEXT NOT NULL,
+		  attempts      INTEGER NOT NULL DEFAULT 0,
+		  error         TEXT,
+		  model         TEXT
+		)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A row written before the migration. The point of the migration is that an
+	// existing installation survives it, and an empty database cannot show that:
+	// it proves the column appears, not that a user's transcripts are still there
+	// afterwards. This is the assertion that would fail if migrate ever grew into
+	// a table rebuild.
+	_, err = raw.Exec(`
+		INSERT INTO notes (id, chat_id, source, media_path, received_at, status)
+		VALUES ('n1', 'c1', 'import', '/tmp/a.ogg', 1700000000000, 'done')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open on an existing database: %v", err)
+	}
+	defer st.Close()
+
+	if _, err := st.db.Exec(`SELECT sender_name FROM notes LIMIT 1`); err != nil {
+		t.Fatalf("sender_name missing after migration: %v", err)
+	}
+
+	var id, status string
+	var senderName sql.NullString
+	err = st.db.QueryRow(
+		`SELECT id, status, sender_name FROM notes WHERE id = 'n1'`).
+		Scan(&id, &status, &senderName)
+	if err != nil {
+		t.Fatalf("the pre-existing row did not survive the migration: %v", err)
+	}
+	if status != "done" {
+		t.Fatalf("status: got %q, want the value written before migrating", status)
+	}
+	if senderName.Valid {
+		t.Fatalf("sender_name on a pre-existing row: got %q, want NULL", senderName.String)
+	}
+}
+
+func TestMetaRoundTrip(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+
+	if _, err := st.GetMeta(ctx, "salt-check"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("absent key: want ErrNotFound, got %v", err)
+	}
+	if err := st.SetMeta(ctx, "salt-check", "abc"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.GetMeta(ctx, "salt-check")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "abc" {
+		t.Fatalf("got %q, want %q", got, "abc")
+	}
+
+	// Overwrite must replace, not conflict.
+	if err := st.SetMeta(ctx, "salt-check", "def"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = st.GetMeta(ctx, "salt-check"); got != "def" {
+		t.Fatalf("got %q, want %q", got, "def")
+	}
+}
+
+func TestCreateNoteHonoursStatus(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	if err := st.UpsertChat(ctx, "c1", "Chat"); err != nil {
+		t.Fatal(err)
+	}
+
+	ok, err := st.CreateNote(ctx, Note{
+		ID: "n1", ChatID: "c1", Source: "whatsapp",
+		Sender: "alias1", SenderName: "Um Ahmad",
+		WAMessageID: "k1", MediaPath: "", ReceivedAt: time.Now(),
+		Status: StatusFailed, Error: "download failed",
+	})
+	if err != nil || !ok {
+		t.Fatalf("create: ok=%v err=%v", ok, err)
+	}
+
+	note, _, err := st.GetNote(ctx, "n1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if note.Status != StatusFailed {
+		t.Fatalf("status: got %q, want %q", note.Status, StatusFailed)
+	}
+	if note.SenderName != "Um Ahmad" {
+		t.Fatalf("sender_name: got %q", note.SenderName)
+	}
+}
+
+func TestCreateNoteDefaultsToPending(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	if err := st.UpsertChat(ctx, "c1", "Chat"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := st.CreateNote(ctx, Note{
+		ID: "n1", ChatID: "c1", Source: "import",
+		MediaPath: "/tmp/a.ogg", ReceivedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	note, _, err := st.GetNote(ctx, "n1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if note.Status != StatusPending {
+		t.Fatalf("status: got %q, want %q", note.Status, StatusPending)
+	}
+}
+
+func TestClaimNextSkipsMediaLessNotes(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	if err := st.UpsertChat(ctx, "c1", "Chat"); err != nil {
+		t.Fatal(err)
+	}
+
+	// A pending note with no media must never be claimed, however it got there.
+	if _, err := st.CreateNote(ctx, Note{
+		ID: "bad", ChatID: "c1", Source: "whatsapp", WAMessageID: "k1",
+		MediaPath: "", ReceivedAt: time.Now(), Status: StatusPending,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := st.ClaimNext(ctx); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("want ErrNotFound, got %v", err)
+	}
+
+	// The guard must skip the bad row rather than stop at it. A media-less note
+	// is older here, so a guard that halted the scan instead of filtering it
+	// would starve every real note queued behind it — the queue is ordered
+	// oldest-first, and one failed download would stall transcription for good.
+	if _, err := st.CreateNote(ctx, Note{
+		ID: "good", ChatID: "c1", Source: "whatsapp", WAMessageID: "k2",
+		MediaPath: "/tmp/a.ogg", ReceivedAt: time.Now().Add(time.Minute),
+		Status: StatusPending,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	claimed, err := st.ClaimNext(ctx)
+	if err != nil {
+		t.Fatalf("a good note behind a media-less one was not claimed: %v", err)
+	}
+	if claimed.ID != "good" {
+		t.Fatalf("claimed %q, want the note that has media", claimed.ID)
+	}
+}
+
+func TestNoteIDByWAMessageID(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	if err := st.UpsertChat(ctx, "c1", "Chat"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateNote(ctx, Note{
+		ID: "n1", ChatID: "c1", Source: "whatsapp", WAMessageID: "k1",
+		MediaPath: "/tmp/a.ogg", ReceivedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := st.NoteIDByWAMessageID(ctx, "k1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "n1" {
+		t.Fatalf("got %q, want n1", got)
+	}
+	if _, err := st.NoteIDByWAMessageID(ctx, "nope"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("want ErrNotFound, got %v", err)
+	}
+}
+
+// The database holds every transcript, and the -wal sidecar holds transcript
+// text that a killed process leaves on disk. internal/wa already chmods
+// session.db and its sidecars to 0600; this file had no equivalent and was
+// created at the process umask, measured at 0644. The 0700 data directory means
+// there is no real exposure, but a privacy claim resting only on the directory
+// above it is one refactor from being false, and the asymmetry between the two
+// packages is exactly what an adversarial reader looks for.
+func TestDatabaseFilesAreOwnerOnly(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "maktoob.db")
+
+	st, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	// The sidecars exist for the life of the connection under WAL, so a write
+	// first makes the assertion cover all three rather than only the main file.
+	if err := st.UpsertChat(context.Background(), "c1", "chat"); err != nil {
+		t.Fatal(err)
+	}
+
+	checked := 0
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		fi, err := os.Stat(path + suffix)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := fi.Mode().Perm(); got != 0o600 {
+			t.Errorf("maktoob.db%s is %04o, want 0600", suffix, got)
+		}
+		checked++
+	}
+	if checked == 0 {
+		t.Fatal("no database files found to check")
+	}
 }

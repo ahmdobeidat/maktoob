@@ -92,11 +92,18 @@ README rather than described in adjectives.
   never persists view-once media.
 - **Data at rest:** everything lives under `data/`. That directory contains your
   account's **identity keys** — anyone who copies it can impersonate your WhatsApp.
-  It is created `0600` and is gitignored. Backing it up copies your credentials.
-- **Deleting is a first-class operation:** `maktoob purge` wipes stored data,
-  `maktoob logout` revokes the companion session.
-
-See [docs/PRIVACY.md](docs/PRIVACY.md) for the full statement.
+  It is created `0700`, the files inside it `0600`, and it is gitignored. Backing
+  it up copies your credentials.
+- **Unlinking is available today:** `maktoob logout` revokes the companion session
+  and leaves your transcripts alone. Deleting stored data is `rm -rf data/`, which
+  is the whole of it — there is no hidden state anywhere else on the machine. A
+  `maktoob purge` command that does this for you is on the roadmap below and is
+  **not built yet**; until it is, this bullet describes a directory, not a
+  feature.
+- **Verbose logging is off by default:** `-verbose` forwards whatsmeow's own
+  diagnostics to stderr, and those contain contacts' phone numbers in the clear.
+  Do not use it where stderr is redirected to a file or captured by a service
+  manager.
 
 ## Platform risk
 
@@ -117,37 +124,50 @@ Requires Go 1.25+, `ffmpeg`, and a built `whisper-server` from whisper.cpp.
 # system dependencies (Debian/Ubuntu)
 sudo apt-get install -y cmake ffmpeg
 
-# build whisper.cpp and fetch models
-./scripts/setup.sh
-
 # build maktoob
 go build ./cmd/maktoob
 ```
 
-Full instructions, including the CPU/GPU decision and expected transcription
-latency, are in [docs/INSTALL.md](docs/INSTALL.md).
+Then build `whisper-server` and fetch a model per whisper.cpp's own
+instructions, start it, and point maktoob at it with `-asr`.
+
+A `scripts/setup.sh` that does the whisper.cpp build and model download in one
+step, and a `docs/INSTALL.md` covering the CPU/GPU decision and expected
+transcription latency, are still to be written. Neither exists yet, so nothing
+above tells you to run them.
 
 ## Usage
 
+Built and working today:
+
 ```sh
-maktoob serve                  # start the local web UI on 127.0.0.1:8080
 maktoob pair                   # link a WhatsApp account (prints a QR code)
 maktoob import <file>          # transcribe an audio file directly
-maktoob export --all           # export everything as JSON or Markdown
+maktoob list                   # show stored notes
+maktoob show <id>              # show one transcript
 maktoob logout                 # revoke the WhatsApp companion session
+```
+
+Roadmap, not yet built — listed so the gap between the design and the code is
+visible rather than implied:
+
+```sh
+maktoob serve                  # local web UI on 127.0.0.1:8080
+maktoob export --all           # export everything as JSON or Markdown
 maktoob purge                  # delete all stored media and transcripts
 ```
 
 ## Extending it
 
-maktoob is meant to be a component, not a silo:
+maktoob is meant to be a component, not a silo. This section describes the
+intended shape of the web layer, which is **not built yet** — it ships with
+`maktoob serve`:
 
-- **HTTP API** — documented in [docs/API.md](docs/API.md).
+- **HTTP API** — to be documented in `docs/API.md`.
 - **Live event stream** — `GET /events` (Server-Sent Events) pushes each transcript
   as it completes.
 - **Local hook** — `--on-transcript <command>` pipes the transcript JSON to any
   program on stdin. No network, no webhook signing problem, no retry semantics.
-  Example scripts in [`examples/`](examples/).
 - **Export** — JSON and Markdown, per note or in bulk.
 
 ## Why not on the phone?

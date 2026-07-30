@@ -4,23 +4,40 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"os"
 	"time"
 
 	"github.com/ahmdobeidat/maktoob/internal/asr"
 	"github.com/ahmdobeidat/maktoob/internal/audio"
 	"github.com/ahmdobeidat/maktoob/internal/pipeline"
 	"github.com/ahmdobeidat/maktoob/internal/store"
+	"github.com/ahmdobeidat/maktoob/internal/wa"
 )
 
 // open wires the pipeline. Every command needs the store; only import needs
 // inference, but building it is free and keeps the wiring in one place.
-func open(cfg config) (*store.Store, *pipeline.Pipeline, error) {
+func open(ctx context.Context, cfg config) (*store.Store, *pipeline.Pipeline, error) {
 	if err := cfg.ensureDataDir(); err != nil {
 		return nil, nil, err
 	}
 
 	st, err := store.Open(cfg.dbPath())
 	if err != nil {
+		return nil, nil, err
+	}
+
+	// Verified on every command, not only the WhatsApp ones. A mismatched salt
+	// does not corrupt anything at pair time — it corrupts the next note that
+	// gets aliased under it, so the check belongs wherever the database is
+	// opened.
+	salt, err := wa.LoadSalt(cfg.saltPath())
+	if err != nil {
+		st.Close()
+		return nil, nil, err
+	}
+	if err := checkSalt(ctx, st, salt, cfg.saltPath()); err != nil {
+		st.Close()
 		return nil, nil, err
 	}
 
@@ -46,7 +63,7 @@ func cmdImport(ctx context.Context, cfg config, files []string) error {
 		return errors.New("import requires at least one file")
 	}
 
-	st, pl, err := open(cfg)
+	st, pl, err := open(ctx, cfg)
 	if err != nil {
 		return err
 	}
@@ -86,7 +103,7 @@ func cmdImport(ctx context.Context, cfg config, files []string) error {
 }
 
 func cmdList(ctx context.Context, cfg config) error {
-	st, _, err := open(cfg)
+	st, _, err := open(ctx, cfg)
 	if err != nil {
 		return err
 	}
@@ -109,7 +126,7 @@ func cmdList(ctx context.Context, cfg config) error {
 }
 
 func cmdShow(ctx context.Context, cfg config, id string) error {
-	st, _, err := open(cfg)
+	st, _, err := open(ctx, cfg)
 	if err != nil {
 		return err
 	}
@@ -168,4 +185,68 @@ func printNote(ctx context.Context, st *store.Store, id string) error {
 func expConfidence(avgLogprob float64) float64 {
 	s := asr.Segment{AvgLogprob: avgLogprob}
 	return s.Confidence()
+}
+
+const saltFingerprintKey = "alias-salt-fingerprint"
+
+// checkSalt refuses to run against a database that was built with a different
+// alias salt.
+//
+// Aliases are derived from the salt, so a lost or swapped salt does not fail
+// loudly: every chat quietly forks into a new row, the old rows keep their
+// display names, and the user sees each conversation twice with nothing to
+// explain it. Catching it here turns a silent data problem into a startup error.
+//
+// saltPath is passed in rather than hardcoded because -data moves it. Naming a
+// path the user does not have, at the moment they are being told their data may
+// be unreachable, is the least helpful thing this message could do.
+func checkSalt(ctx context.Context, st *store.Store, salt wa.Salt, saltPath string) error {
+	want := salt.Fingerprint()
+
+	got, err := st.GetMeta(ctx, saltFingerprintKey)
+	if errors.Is(err, store.ErrNotFound) {
+		return st.SetMeta(ctx, saltFingerprintKey, want)
+	}
+	if err != nil {
+		return err
+	}
+	if got != want {
+		return fmt.Errorf(
+			"the alias salt does not match this database: %s has been replaced or lost.\n"+
+				"Restore the original %s, or start a new database, "+
+				"because chats aliased under a different salt cannot be matched to the existing ones",
+			saltPath, saltPath)
+	}
+	return nil
+}
+
+func cmdPair(ctx context.Context, cfg config) error {
+	client, err := wa.Connect(ctx, cfg.sessionPath(), slog.Default(), cfg.verbose)
+	if err != nil {
+		return err
+	}
+	defer client.Disconnect()
+
+	return wa.Pair(ctx, client, os.Stdout)
+}
+
+func cmdLogout(ctx context.Context, cfg config) error {
+	client, err := wa.Connect(ctx, cfg.sessionPath(), slog.Default(), cfg.verbose)
+	if err != nil {
+		return err
+	}
+	defer client.Disconnect()
+
+	if client.Store.ID == nil {
+		return wa.ErrNotPaired
+	}
+	if err := client.Connect(); err != nil {
+		return fmt.Errorf("connect: %w", err)
+	}
+	if err := wa.Logout(ctx, client); err != nil {
+		return err
+	}
+
+	fmt.Println("Unlinked. Transcripts already stored on this machine are untouched.")
+	return nil
 }

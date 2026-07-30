@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS notes (
   chat_id       TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
   source        TEXT NOT NULL,
   sender        TEXT,
+  sender_name   TEXT,
   wa_message_id TEXT UNIQUE,
   media_path    TEXT NOT NULL,
   wav_path      TEXT,
@@ -82,4 +83,12 @@ CREATE INDEX IF NOT EXISTS idx_segments_note ON segments(note_id, idx);
 -- External content is not usable either, because the indexed text is the
 -- Arabic-normalised form rather than any column that exists in segments.
 CREATE VIRTUAL TABLE IF NOT EXISTS segments_fts USING fts5(text);
+
+-- meta holds small install-scoped values that are not per-note: currently the
+-- alias salt fingerprint, which detects a lost or swapped salt before every
+-- chat in the database silently forks into a new one.
+CREATE TABLE IF NOT EXISTS meta (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 `
