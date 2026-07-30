@@ -16,6 +16,14 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # internal/audio's tests skip themselves when ffmpeg is absent, which
+      # keeps the suite runnable on a machine without it — but a skipped test
+      # asserts nothing. Installing it here is what makes the conversion format,
+      # the 0600 mode on converted audio, and the path redaction in ffmpeg's own
+      # error messages actually checked on every pull request.
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
       - name: Verify formatting
         run: |
           unformatted=$(gofmt -l .)
