@@ -525,39 +525,9 @@ func (s *Store) segmentsFor(ctx context.Context, noteID string) ([]Segment, erro
 	return out, rows.Err()
 }
 
-// ListNotes returns notes newest first.
+// ListNotes returns notes newest first, across every chat.
 func (s *Store) ListNotes(ctx context.Context, limit int) ([]Note, error) {
-	if limit <= 0 {
-		limit = 50
-	}
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT n.id, n.chat_id, c.display_name, n.source, n.sender, n.sender_name,
-		       n.media_path, n.duration_ms, n.received_at, n.status, n.error
-		FROM notes n
-		JOIN chats c ON c.id = n.chat_id
-		ORDER BY n.received_at DESC
-		LIMIT ?`, limit)
-	if err != nil {
-		return nil, fmt.Errorf("list notes: %w", err)
-	}
-	defer rows.Close()
-
-	var out []Note
-	for rows.Next() {
-		var n Note
-		var received int64
-		var chatName, sender, senderName, errMsg sql.NullString
-
-		if err := rows.Scan(&n.ID, &n.ChatID, &chatName, &n.Source, &sender, &senderName,
-			&n.MediaPath, &n.DurationMS, &received, &n.Status, &errMsg); err != nil {
-			return nil, fmt.Errorf("list notes: %w", err)
-		}
-		n.ChatName, n.Sender = chatName.String, sender.String
-		n.SenderName, n.Error = senderName.String, errMsg.String
-		n.ReceivedAt = time.UnixMilli(received)
-		out = append(out, n)
-	}
-	return out, rows.Err()
+	return s.ListNotesByChat(ctx, "", limit)
 }
 
 // buildQuery converts user input into a safe FTS5 MATCH expression. It is the
