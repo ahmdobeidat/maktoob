@@ -52,8 +52,19 @@ func TestVoiceNoteFilter(t *testing.T) {
 	fromMe := message(dm, audioPTT())
 	fromMe.Info.IsFromMe = true
 
+	// All four view-once signals, because PRIVACY.md tells the reader this is
+	// "checked four different ways" and two of them had no test behind that
+	// claim. They are not interchangeable: which flag gets set depends on the
+	// sending client's version, so a regression in any one of them silently
+	// starts transcribing messages someone chose to make ephemeral.
 	wrapperViewOnce := message(dm, audioPTT())
 	wrapperViewOnce.IsViewOnce = true
+
+	wrapperViewOnceV2 := message(dm, audioPTT())
+	wrapperViewOnceV2.IsViewOnceV2 = true
+
+	wrapperViewOnceV2Ext := message(dm, audioPTT())
+	wrapperViewOnceV2Ext.IsViewOnceV2Extension = true
 
 	cases := []struct {
 		name string
@@ -66,6 +77,8 @@ func TestVoiceNoteFilter(t *testing.T) {
 		{"newsletter", message(news, audioPTT()), false},
 		{"sent by us", fromMe, false},
 		{"view once via wrapper", wrapperViewOnce, false},
+		{"view once via the v2 wrapper", wrapperViewOnceV2, false},
+		{"view once via the v2 extension wrapper", wrapperViewOnceV2Ext, false},
 		{"view once on the audio itself", message(dm, viewOnceOnAudio), false},
 		{"attached audio file, not a voice note", message(dm, attachedAudio), false},
 		{"plain text", message(dm, &waE2E.Message{Conversation: proto.String("hi")}), false},

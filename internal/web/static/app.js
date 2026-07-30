@@ -27,8 +27,13 @@
   // that focus, accept a keypress and do nothing — on a long transcript, dozens
   // of dead tab stops between the reader and the rest of the page.
   function revealScriptedControls(root) {
-    (root || document).querySelectorAll("[data-js-only][hidden]").forEach(function (el) {
+    var scope = root || document;
+    scope.querySelectorAll("[data-js-only][hidden]").forEach(function (el) {
       el.hidden = false;
+    });
+    // And hide the no-JavaScript twin, so the same action is not offered twice.
+    scope.querySelectorAll("[data-js-hidden]").forEach(function (el) {
+      el.hidden = true;
     });
   }
   revealScriptedControls();
@@ -64,10 +69,15 @@
     if (!id) return;
     document.querySelectorAll(".segment.is-target").forEach(function (el) {
       el.classList.remove("is-target");
+      el.removeAttribute("aria-current");
     });
     var target = document.getElementById(id);
     if (target && target.classList.contains("segment")) {
       target.classList.add("is-target");
+      // The ring alone is a colour-only signal, and an <li> is not focusable
+      // so nothing else tells a screen reader this is the line that was
+      // searched for. aria-current puts it in the accessibility tree.
+      target.setAttribute("aria-current", "location");
     }
   }
   window.addEventListener("hashchange", highlightHash);
@@ -135,11 +145,14 @@
     editor.appendChild(row);
     editor.appendChild(error);
 
+    // Order matters: the editor is inserted and focused before the trigger is
+    // hidden, so focus never rests on a hidden element even briefly. Hiding
+    // first makes some screen readers announce the document body in between.
     textEl.hidden = true;
-    if (actions) actions.hidden = true;
     body.insertBefore(editor, actions || null);
     field.focus();
     field.setSelectionRange(field.value.length, field.value.length);
+    if (actions) actions.hidden = true;
 
     function close() {
       editorOpen = false;

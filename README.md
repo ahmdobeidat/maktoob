@@ -183,6 +183,10 @@ maktoob is meant to be a component, not a silo.
   JSON export and the read API return the same document, so a client that reads
   one reads the other. Neither contains a filesystem path.
 
+A demo run-sheet, with the fallbacks for when a live demo fails, is in
+**[docs/DEMO.md](docs/DEMO.md)**. `go run ./scripts/seed` builds a demo database
+so the interface can be shown without WhatsApp and without transcribing anything.
+
 There are deliberately **no outbound webhooks**. A fire-and-forget webhook with
 no signature and no retry is a weaker extensibility story than none at all; poll
 the API or read the event stream.

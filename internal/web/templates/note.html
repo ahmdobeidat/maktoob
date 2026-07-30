@@ -71,13 +71,30 @@
               tool that signalled "this line may be fabricated" purely by tint
               would be withholding the warning from part of its audience.
             -->
-            <p class="markers" dir="{{$.Loc.Dir}}">{{join ", " .Markers}}</p>
+            <p class="markers" dir="{{$.Loc.Dir}}">{{join ", " .Markers}}<span class="confidence"> — {{$.Loc.ConfidenceIs}} <span dir="ltr">{{.Confidence}}%</span></span></p>
           {{end}}
 
-          <div class="segment-actions" dir="{{$.Loc.Dir}}">
+          <div class="segment-actions" dir="{{$.Loc.Dir}}" data-js-only hidden>
             <button type="button" class="edit"
                     aria-label="{{$.Loc.EditSegment}} — {{.Timecode}}">{{$.Loc.EditSegment}}</button>
           </div>
+
+          <!--
+            The no-JavaScript path for correcting a line. A native <details>
+            disclosure wrapping a real form: keyboard operable, announced by
+            screen readers, and submitting it works with the script blocked.
+            app.js hides this and shows the inline editor instead, which is
+            nicer but is an enhancement rather than the only way in.
+          -->
+          <details class="segment-fallback" dir="{{$.Loc.Dir}}" data-js-hidden>
+            <summary>{{$.Loc.EditSegment}} <span class="timecode" dir="ltr">{{.Timecode}}</span></summary>
+            <form method="post" action="/segments/{{.ID}}">
+              <label class="visually-hidden" for="edit-{{.ID}}">{{$.Loc.EditSegment}}</label>
+              <textarea id="edit-{{.ID}}" name="text" rows="3"
+                        lang="ar" dir="auto">{{.Text}}</textarea>
+              <button type="submit">{{$.Loc.Save}}</button>
+            </form>
+          </details>
         </div>
       </li>
     {{end}}
@@ -99,7 +116,7 @@
   {{end}}
 {{end}}
 
-<section class="exports" aria-label="{{.Loc.ExportJSON}}">
+<section class="exports" aria-label="{{.Loc.ExportSection}}">
   <a class="button-link" href="/api/notes/{{.Note.ID}}/export?format=json">{{.Loc.ExportJSON}}</a>
   <a class="button-link" href="/api/notes/{{.Note.ID}}/export?format=md">{{.Loc.ExportMD}}</a>
 </section>
