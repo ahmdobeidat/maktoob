@@ -90,11 +90,25 @@ thing that separates this from a wrapper around Whisper.
 ## Questions worth pre-loading
 
 **"What is the word error rate?"**
-Not measured yet, and say so. Naming an unmeasured number is the one thing that
-loses a technical audience permanently. What you can say: every segment carries
-the model's own confidence, likely fabrications are flagged separately from
-low confidence, the audio sits next to the text, and any line can be corrected —
-the design assumes the transcript is a draft.
+**54%.** Say the number first, without flinching — you measured it, it is in
+[WER.md](WER.md), and volunteering a bad number you own beats being caught
+without one. Ten notes, 95 seconds, scored through the shipping pipeline.
+
+Then the part that matters: character error rate is 20%. That gap means the
+errors are mostly near-misses a reader reads straight through — Modern Standard
+spellings of dialect words, `اكتر` written `اكثر`, a clitic split in two. The
+model is pulling Levantine toward MSA, which is its known weakness on dialect.
+Where it genuinely breaks is sustained fast speech: one note in ten contributes
+a third of all the errors.
+
+That is why the transcript is presented as a draft and not a record — every
+segment carries the model's own confidence, likely fabrications are flagged
+separately from low confidence, the audio sits next to the text, and any line can
+be corrected. The measurement justifies the design; it does not undermine it.
+
+Do not claim it as an accessibility substitute for the audio. At 54% a deaf
+reader gets the gist of a short note and gets misled by a long one. Say that
+before someone else does.
 
 **"Isn't this against WhatsApp's terms?"**
 Yes, and it is written in the README and in PRIVACY.md rather than left to be
