@@ -153,6 +153,39 @@ This is why the file-upload path exists and why `internal/wa` is one adapter beh
 a stable internal boundary: if the WhatsApp path dies, everything downstream —
 transcription, search, correction, export — keeps working.
 
+### Why the demo does not pair a live WhatsApp account
+
+We were asked for a live demo, and we can give one for everything except the leg
+that matters most to us. This is the honest accounting of that gap.
+
+**What is live:** drop a voice note into the interface and watch the real thing
+happen — ffmpeg conversion, whisper transcribing on the machine in the room with
+no network, per-segment confidence, the suspect-line flagging, correction,
+search, export. That is the whole pipeline, running, on real audio, in front of
+you.
+
+**What is not live: receiving a voice note from WhatsApp itself.** The pairing
+code is built and it works. We did not want to run it on stage, and the reason is
+the platform risk above rather than anything about the code. The only accounts we
+could pair are our own personal numbers — the ones our families actually use — and
+a ban does not cost the project, it costs a person their messaging account in a
+country where WhatsApp *is* the phone network. We were not willing to bet a real
+number on a demo, and we are not willing to imply we tested something we did not.
+
+So the demo runs on `maktoob import`, the web upload form, and a seeded database.
+Those exercise the identical pipeline; `internal/wa` only supplies the file at the
+front of it.
+
+**We would rather fix this than keep working around it, and suggestions are
+genuinely welcome.** If you know a way to demonstrate the WhatsApp ingest path
+without staking a real person's number on it — a burner number that reliably
+survives whatsmeow, a WhatsApp Business API route that fits a local-only tool, a
+protocol-level fake good enough to be honest about, or simply evidence that the
+ban risk is smaller than we think — please
+[open an issue](https://github.com/ahmdobeidat/maktoob/issues). This is the one
+part of the project we could not show you honestly, and we would like that to
+stop being true.
+
 ## Install
 
 ```sh
