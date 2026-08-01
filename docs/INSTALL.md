@@ -135,8 +135,9 @@ Levantine voice notes:
   lengths tested rather than proportional to duration.
 
 That is a handful of notes on one machine, not a benchmark. It is here because
-"fast" is not a measurement. Word error rate is the number that matters most and
-it is **not yet measured** — see above.
+"fast" is not a measurement. Word error rate is the number that matters most,
+and it is measured too: **54%** on Levantine Arabic, with the corpus and the
+error breakdown in [WER.md](WER.md).
 
 ## Common problems
 
