@@ -11,10 +11,11 @@ transcript is sent to any third party.
 > (18 July – 1 August 2026). This README describes what is built; features still
 > in progress are marked as such in [the design spec](docs/superpowers/specs/2026-07-24-maktoob-design.md).
 >
-> **Not yet measured: word error rate on Levantine Arabic.** It is the number
-> that decides whether a transcript here is a document or a draft, and it is
-> stated as unmeasured rather than estimated. See *The transcript is a view onto
-> the audio* below.
+> **Measured: 54% word error rate on Levantine Arabic** (20% character error
+> rate, 10 notes, 95 seconds). It is the number that decides whether a
+> transcript here is a document or a draft, and it says draft. The full
+> measurement, including what the errors are made of, is in
+> [docs/WER.md](docs/WER.md).
 
 ---
 
@@ -37,6 +38,11 @@ The existing options each fail for a different reason:
 maktoob adds the accessibility layer on the **receiving side only**. Nobody has to
 migrate, install anything, or change how they message you. The people who send you
 voice notes never know it is there.
+
+How well it does that is measured rather than asserted, and the honest answer is
+"partially": 54% word error rate on Levantine Arabic ([docs/WER.md](docs/WER.md)).
+That is enough to skim, search and quote a short note, and not enough to trust a
+long one without checking it against the audio.
 
 ### Who this is for
 
@@ -87,9 +93,19 @@ roughly 13–15 seconds per note on the development machine, CPU-only, and rough
 flat across the note lengths tested. That is a handful of notes on one machine,
 not a benchmark.
 
-Word error rate on Levantine Arabic is **not measured yet**, and it is the
-number that decides whether a transcript here is a document or a draft. It is
-stated as missing rather than estimated.
+Word error rate on Levantine Arabic **is measured: 54%**, with a 20% character
+error rate, over ten voice notes and 95 seconds of speech. The full method,
+per-file table and error breakdown are in [docs/WER.md](docs/WER.md).
+
+That is a bad number and it is published rather than buried. It is also a
+specific kind of bad: the gap between 54% word errors and 20% character errors
+means most errors are near-misses a reader reads straight through — Modern
+Standard spellings of dialect words, a clitic split off, a conjunction absorbed
+into its neighbour. Sustained fast speech is where it genuinely breaks down.
+
+So the transcript is a draft, which is what this interface already assumes. What
+the number does not support is treating an uncorrected transcript as an
+accessibility substitute for the audio.
 
 ## Privacy
 

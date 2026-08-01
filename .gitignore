@@ -9,6 +9,12 @@
 # Third-party audio must never enter git.
 /bakeoff/
 
+# WER corpus: a recorded voice identifies the person who recorded it, so the
+# audio stays out of git. The reference transcripts and the harness are
+# committed, which is what makes the published number auditable. See docs/WER.md.
+/testdata/wer/*
+!/testdata/wer/reference.tsv
+
 # Models (gigabytes, fetched by scripts/setup.sh)
 /models/
 *.bin

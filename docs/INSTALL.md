@@ -102,16 +102,17 @@ MODEL=small ./scripts/setup.sh
 | `small` | ~466 MB | Smaller and faster. Reasonable if disk or RAM is tight |
 | `tiny` | ~75 MB | For checking the pipeline runs end to end |
 
-**Accuracy on Levantine Arabic is not yet measured for this project, for any of
-these models.** The table above deliberately makes no accuracy claim: ranking
-them without a bake-off would be inventing the number this paragraph admits is
-missing. Whisper is known to be weaker on Levantine than on English or Modern
-Standard Arabic.
+**`large-v3-turbo` is measured at 54% word error rate on Levantine Arabic** — see
+[WER.md](WER.md) for the corpus, method and error breakdown. The other rows in
+the table still carry no accuracy claim, because ranking them without running the
+same corpus through each would be inventing numbers. Whisper is known to be
+weaker on Levantine than on English or Modern Standard Arabic, and turbo variants
+give up more accuracy on non-English audio than on English.
 
-Until a word error rate is published, treat every transcript as a draft to check
-against the audio rather than a record of what was said. The interface is built
-around that assumption: every line carries the model's own confidence, and lines
-that look fabricated are marked separately.
+Treat every transcript as a draft to check against the audio rather than a record
+of what was said. The interface is built around that assumption: every line
+carries the model's own confidence, and lines that look fabricated are marked
+separately.
 
 ## CPU or GPU
 
