@@ -115,6 +115,27 @@ Yes, and it is written in the README and in PRIVACY.md rather than left to be
 found. whatsmeow is an unofficial client, accounts using it can be banned, and
 the architecture keeps it as one replaceable adapter for that reason.
 
+**"Why isn't the WhatsApp part live?"** — expect this one, and do not get
+defensive about it.
+
+Answer it in this order. Everything you just watched *was* live: real audio, real
+ffmpeg, real whisper on this machine with the network off. What is not live is
+the WhatsApp leg specifically. The pairing code is built and works; we would not
+run it on stage because the only numbers we can pair are our own personal ones,
+and a ban costs a person their messaging account rather than costing the project
+a feature. We were not willing to bet a real number on a demo.
+
+Then hand it back to them: **we are asking for suggestions on this.** A burner
+that reliably survives whatsmeow, a Business API route that fits a local-only
+tool, or evidence the ban risk is smaller than we think — any of those we would
+take. It is written up in the README under *Why the demo does not pair a live
+WhatsApp account*.
+
+Do not oversell the fallback and do not apologise for it either. `internal/wa`
+supplies a file to the front of the pipeline; `maktoob import` supplies the same
+file to the same pipeline. The gap is real and it is narrow, and saying so
+plainly reads better than either pretending it is nothing or flinching.
+
 **"What does pairing actually give it?"**
 A full multi-device session — every chat, every incoming message, the contact
 list. maktoob keeps voice notes and discards the rest, and that is a policy
