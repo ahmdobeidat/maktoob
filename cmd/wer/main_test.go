@@ -1,5 +1,11 @@
 package main
 
+// Arabic test data is written as Unicode escapes rather than literal glyphs, for
+// the same reason internal/arabic does it: bidirectional text reorders source
+// code visually in most editors and terminals, so a reviewer cannot tell what a
+// literal string actually contains or what order its characters are in. Each
+// case carries a romanised hint so the intent stays readable.
+
 import (
 	"os"
 	"reflect"
@@ -77,25 +83,29 @@ func TestTokensFoldsVariantsAndDropsPunctuation(t *testing.T) {
 			// Hamza-carrying alef: whisper writes it, phone keyboards omit it.
 			// Scoring these as errors would measure keyboards, not hearing.
 			name: "alef forms fold together",
-			in:   "أنا إلى آخر",
-			want: []string{"انا", "الي", "اخر"},
+			// "ana ila akhar"
+			in:   "\u0623\u0646\u0627 \u0625\u0644\u0649 \u0622\u062E\u0631",
+			want: []string{"\u0627\u0646\u0627", "\u0627\u0644\u064A", "\u0627\u062E\u0631"},
 		},
 		{
 			// Teh marbuta and alef maksura are written interchangeably.
 			name: "teh marbuta folds to heh",
-			in:   "محشية",
-			want: []string{"محشيه"},
+			// "mahshiyya"
+			in:   "\u0645\u062D\u0634\u064A\u0629",
+			want: []string{"\u0645\u062D\u0634\u064A\u0647"},
 		},
 		{
 			// Whisper invents sentence-final marks the script has no opinion on.
 			name: "punctuation is dropped",
-			in:   "طب، شو؟",
-			want: []string{"طب", "شو"},
+			// "tab, shu?"
+			in:   "\u0637\u0628\u060C \u0634\u0648\u061F",
+			want: []string{"\u0637\u0628", "\u0634\u0648"},
 		},
 		{
 			name: "diacritics are removed",
-			in:   "حاليّاً",
-			want: []string{"حاليا"},
+			// "haliyyan", carrying shadda and tanween
+			in:   "\u062D\u0627\u0644\u064A\u0651\u0627\u064B",
+			want: []string{"\u062D\u0627\u0644\u064A\u0627"},
 		},
 		{
 			name: "whitespace only yields no tokens",
@@ -115,8 +125,8 @@ func TestTokensFoldsVariantsAndDropsPunctuation(t *testing.T) {
 
 // A word split into two by the model must not silently score as a match.
 func TestTokensKeepsCliticSplitVisible(t *testing.T) {
-	joined := tokens("احكيلك") // احكيلك
-	split := tokens("احكي لك") // احكي لك
+	joined := tokens("\u0627\u062D\u0643\u064A\u0644\u0643") // "ahkilak"
+	split := tokens("\u0627\u062D\u0643\u064A \u0644\u0643") // "ahki lak"
 	if len(joined) != 1 || len(split) != 2 {
 		t.Fatalf("token counts = %d and %d, want 1 and 2", len(joined), len(split))
 	}
