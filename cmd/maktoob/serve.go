@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -11,6 +12,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"go.mau.fi/whatsmeow"
+	"rsc.io/qr"
 
 	"github.com/ahmdobeidat/maktoob/internal/pipeline"
 	"github.com/ahmdobeidat/maktoob/internal/store"
@@ -81,15 +85,27 @@ func cmdServe(ctx context.Context, cfg config, addr string) error {
 		publishNoteUpdate(ctx, st, broker, loc, noteID)
 	}
 
-	waHandle, err := startWhatsApp(ctx, cfg, pl, broker, loc, log)
-	if err != nil {
+	// Built up front, and unpaired startWhatsApp attaches to it in place rather
+	// than returning a fresh one — a runtime pairing from the web button needs
+	// the same handle the server already handed its stateFunc to, or a
+	// successful pairing would light up nothing the page is looking at.
+	waHandle := &whatsAppHandle{}
+	if err := startWhatsApp(ctx, cfg, pl, broker, loc, log, waHandle); err != nil {
 		// Not fatal. Imported files and stored transcripts do not need WhatsApp,
 		// and a server that refuses to start because a phone is unreachable is
 		// worse than one that starts and says so.
 		log.Warn("WhatsApp is not available; serving stored notes only", "err", err)
 	}
-	if waHandle != nil {
-		defer waHandle.Close()
+	defer waHandle.Close()
+
+	pairing := &pairingController{
+		ctx:    context.WithoutCancel(ctx),
+		cfg:    cfg,
+		pl:     pl,
+		broker: broker,
+		loc:    loc,
+		log:    log,
+		handle: waHandle,
 	}
 
 	srv, err := web.New(web.Options{
@@ -99,6 +115,8 @@ func cmdServe(ctx context.Context, cfg config, addr string) error {
 		Logger:        log,
 		Locale:        &loc,
 		WhatsAppState: waHandle.stateFunc(),
+		CanPair:       waHandle.canPair,
+		StartPairing:  pairing.Start,
 	})
 	if err != nil {
 		return err
@@ -276,30 +294,47 @@ func publishNoteUpdate(ctx context.Context, st *store.Store, broker *web.Broker,
 // --- WhatsApp ------------------------------------------------------------
 
 // whatsAppHandle owns the pieces that only exist when a device is linked.
+//
+// It is constructed empty and filled in later — either immediately, by
+// startWhatsApp reading an existing session, or minutes into a running
+// server, by a pairing attempt started from the web button. mu guards the
+// fields a concurrent pairing attempt writes; state is a separate atomic
+// because the SSE handler and every page render read it far more often than
+// it changes.
 type whatsAppHandle struct {
+	mu       sync.Mutex
 	listener *wa.Listener
-	state    atomic.Value // string
 	disconn  func()
+	linked   atomic.Bool
+	state    atomic.Value // string
 }
 
-// stateFunc returns a reporter for the interface badge, or nil when WhatsApp is
-// not running at all. Nil is meaningful: the badge is then absent rather than
-// showing a permanent "disconnected", which would read as a fault on a machine
-// that was never meant to be linked.
+// stateFunc returns a reporter for the interface badge. The badge is absent
+// (an empty string) until a device is linked, rather than showing a permanent
+// "disconnected", which would read as a fault on a machine that was never
+// meant to be linked yet.
 func (h *whatsAppHandle) stateFunc() func() string {
-	if h == nil {
-		return nil
-	}
 	return func() string {
+		if !h.linked.Load() {
+			return ""
+		}
 		s, _ := h.state.Load().(string)
 		return s
 	}
+}
+
+// canPair reports whether the "Link WhatsApp" button should be offered: no
+// device linked yet.
+func (h *whatsAppHandle) canPair() bool {
+	return !h.linked.Load()
 }
 
 func (h *whatsAppHandle) Close() {
 	if h == nil {
 		return
 	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	if h.listener != nil {
 		h.listener.Close()
 	}
@@ -308,39 +343,25 @@ func (h *whatsAppHandle) Close() {
 	}
 }
 
-// startWhatsApp links the listener to the pipeline when a session exists.
-//
-// An unpaired install is an ordinary state, not an error: the user may be
-// running maktoob purely on imported files, and pairing is a separate,
-// deliberate step.
-func startWhatsApp(
+// attach wires a freshly connected, linked client into h: the alias salt, the
+// transcription sink, and the listener loop. Shared by the two paths that
+// produce a linked client — reading an existing session at startup, and a
+// pairing attempt finishing successfully — so the wiring can't drift between
+// them.
+func (h *whatsAppHandle) attach(
 	ctx context.Context,
+	client *whatsmeow.Client,
 	cfg config,
 	pl *pipeline.Pipeline,
 	broker *web.Broker,
 	loc web.Locale,
 	log *slog.Logger,
-) (*whatsAppHandle, error) {
-	if _, err := os.Stat(cfg.sessionPath()); errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("no device is linked: run `maktoob pair` first")
-	}
-
-	client, err := wa.Connect(ctx, cfg.sessionPath(), log, cfg.verbose)
-	if err != nil {
-		return nil, err
-	}
-	if client.Store.ID == nil {
-		client.Disconnect()
-		return nil, wa.ErrNotPaired
-	}
-
+) error {
 	salt, err := wa.LoadSalt(cfg.saltPath())
 	if err != nil {
-		client.Disconnect()
-		return nil, err
+		return err
 	}
 
-	h := &whatsAppHandle{disconn: client.Disconnect}
 	h.state.Store(wa.Disconnected.String())
 
 	// Announced before transcription starts. The arrival is the part the user is
@@ -356,7 +377,7 @@ func startWhatsApp(
 		})
 	})
 
-	h.listener = &wa.Listener{
+	listener := &wa.Listener{
 		Client:  client,
 		Sink:    sink,
 		Salt:    salt,
@@ -364,14 +385,150 @@ func startWhatsApp(
 		OnState: func(s wa.State) { h.state.Store(s.String()) },
 	}
 
-	if err := h.listener.Start(ctx); err != nil {
+	if err := listener.Start(ctx); err != nil {
+		return err
+	}
+
+	h.mu.Lock()
+	h.listener = listener
+	h.disconn = client.Disconnect
+	h.mu.Unlock()
+	h.linked.Store(true)
+
+	return nil
+}
+
+// startWhatsApp fills h from an existing session, if one is on disk. It
+// leaves h untouched — still unpaired, still offering the pairing button —
+// when no session exists yet, because that is an ordinary state, not an
+// error: the user may be running maktoob purely on imported files, and
+// pairing is a separate, deliberate step.
+func startWhatsApp(
+	ctx context.Context,
+	cfg config,
+	pl *pipeline.Pipeline,
+	broker *web.Broker,
+	loc web.Locale,
+	log *slog.Logger,
+	h *whatsAppHandle,
+) error {
+	if _, err := os.Stat(cfg.sessionPath()); errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("no device is linked: run \"maktoob pair\" or use the web button")
+	}
+
+	client, err := wa.Connect(ctx, cfg.sessionPath(), log, cfg.verbose)
+	if err != nil {
+		return err
+	}
+	if client.Store.ID == nil {
 		client.Disconnect()
-		return nil, err
+		return wa.ErrNotPaired
+	}
+
+	if err := h.attach(ctx, client, cfg, pl, broker, loc, log); err != nil {
+		client.Disconnect()
+		return err
 	}
 	if err := client.Connect(); err != nil {
 		h.Close()
-		return nil, fmt.Errorf("connect: %w", err)
+		return fmt.Errorf("connect: %w", err)
+	}
+	return nil
+}
+
+// pairingController runs pairing attempts started from the web interface.
+//
+// ctx outlives any single HTTP request: a pairing attempt has to keep running
+// (and keep the connected client alive) after the handler that started it has
+// already returned 202 to the browser. It is the server's own lifetime
+// context, detached from cancellation, not the request's.
+type pairingController struct {
+	ctx    context.Context
+	cfg    config
+	pl     *pipeline.Pipeline
+	broker *web.Broker
+	loc    web.Locale
+	log    *slog.Logger
+	handle *whatsAppHandle
+
+	mu     sync.Mutex
+	active bool
+}
+
+// Start begins a pairing attempt in the background and returns immediately.
+// It refuses a second attempt while one is already running, and refuses to
+// start at all once a device is linked — "logout" is the way to relink, so
+// that action stays a deliberate, separate step rather than something the
+// pairing button does implicitly.
+func (p *pairingController) Start(_ context.Context) error {
+	if p.handle.linked.Load() {
+		return fmt.Errorf("a device is already linked; run: maktoob logout")
 	}
 
-	return h, nil
+	p.mu.Lock()
+	if p.active {
+		p.mu.Unlock()
+		return fmt.Errorf("a pairing attempt is already in progress")
+	}
+	p.active = true
+	p.mu.Unlock()
+
+	go p.run()
+	return nil
+}
+
+func (p *pairingController) run() {
+	defer func() {
+		p.mu.Lock()
+		p.active = false
+		p.mu.Unlock()
+	}()
+
+	client, err := wa.Connect(p.ctx, p.cfg.sessionPath(), p.log, p.cfg.verbose)
+	if err != nil {
+		p.fail(err)
+		return
+	}
+
+	err = wa.PairCode(p.ctx, client, func(code string) error {
+		png, err := qrPNG(code)
+		if err != nil {
+			return err
+		}
+		p.broker.Publish(web.Event{
+			Kind: web.KindPairQR,
+			QR:   "data:image/png;base64," + base64.StdEncoding.EncodeToString(png),
+		})
+		return nil
+	})
+	if err != nil {
+		client.Disconnect()
+		p.fail(err)
+		return
+	}
+
+	if err := p.handle.attach(p.ctx, client, p.cfg, p.pl, p.broker, p.loc, p.log); err != nil {
+		client.Disconnect()
+		p.fail(err)
+		return
+	}
+
+	p.broker.Publish(web.Event{Kind: web.KindPairLinked, Text: "WhatsApp linked."})
+}
+
+func (p *pairingController) fail(err error) {
+	p.log.Warn("pairing failed", "err", err)
+	p.broker.Publish(web.Event{Kind: web.KindPairError, Text: err.Error()})
+}
+
+// qrPNG renders a QR payload as a PNG. Encoded at qr.M rather than the
+// default: the code is displayed small, on a phone camera, across a room at a
+// conference, and M's extra error-correction bytes are cheap insurance
+// against exactly that.
+func qrPNG(code string) ([]byte, error) {
+	c, err := qr.Encode(code, qr.M)
+	if err != nil {
+		return nil, fmt.Errorf("encode QR: %w", err)
+	}
+	return c.PNG(), nil
 }

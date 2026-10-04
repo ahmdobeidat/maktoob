@@ -9,6 +9,7 @@
 package web
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"errors"
@@ -56,6 +57,17 @@ type Options struct {
 	// header badge. It is a function rather than a value because the state
 	// changes underneath the page, and nil when maktoob runs without WhatsApp.
 	WhatsAppState func() string
+
+	// CanPair reports whether the "Link WhatsApp" button should be offered.
+	// Nil means pairing is never offered, matching WhatsAppState's convention
+	// for "this feature is absent" rather than "this feature is off".
+	CanPair func() bool
+	// StartPairing begins a pairing attempt in the background and returns
+	// immediately; progress and the outcome arrive as broker events
+	// (KindPairQR, KindPairLinked, KindPairError). It returns an error only
+	// when an attempt could not be started at all — already linked, or one
+	// already in flight.
+	StartPairing func(ctx context.Context) error
 }
 
 // Server is the HTTP interface. It is safe for concurrent use.
@@ -63,10 +75,12 @@ type Server struct {
 	store    *store.Store
 	pipe     *pipeline.Pipeline
 	broker   *Broker
-	log      *slog.Logger
-	loc      Locale
-	waState  func() string
-	listTmpl *template.Template
+	log          *slog.Logger
+	loc          Locale
+	waState      func() string
+	canPair      func() bool
+	startPairing func(ctx context.Context) error
+	listTmpl     *template.Template
 	noteTmpl *template.Template
 	mux      *http.ServeMux
 }
@@ -81,12 +95,14 @@ func New(opts Options) (*Server, error) {
 		return nil, errors.New("web: Store is required")
 	}
 	s := &Server{
-		store:   opts.Store,
-		pipe:    opts.Pipeline,
-		broker:  opts.Broker,
-		log:     opts.Logger,
-		loc:     English,
-		waState: opts.WhatsAppState,
+		store:        opts.Store,
+		pipe:         opts.Pipeline,
+		broker:       opts.Broker,
+		log:          opts.Logger,
+		loc:          English,
+		waState:      opts.WhatsAppState,
+		canPair:      opts.CanPair,
+		startPairing: opts.StartPairing,
 	}
 	if opts.Locale != nil {
 		s.loc = *opts.Locale
@@ -143,6 +159,7 @@ func (s *Server) routes() {
 	// true statement about this interface rather than an aspiration.
 	mux.HandleFunc("POST /segments/{id}", s.guard(s.handleFormSegment))
 	mux.HandleFunc("POST /import", s.guard(s.handleImport))
+	mux.HandleFunc("POST /pair/start", s.guard(s.handlePairStart))
 
 	mux.Handle("GET /static/", http.FileServerFS(assets))
 
@@ -206,6 +223,7 @@ type pageData struct {
 	Segments []segmentView
 	WAState  string
 	HasAudio bool
+	CanPair  bool
 }
 
 func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
@@ -276,6 +294,10 @@ func (s *Server) handleNotePage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) render(w http.ResponseWriter, r *http.Request, t *template.Template, data pageData) {
+	if s.canPair != nil {
+		data.CanPair = s.canPair()
+	}
+
 	// Rendered into memory first. A template that fails halfway through has
 	// already written a 200 and half a page, and the user sees a truncated
 	// transcript rather than an error.
@@ -570,6 +592,22 @@ func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/note/"+url.PathEscape(id), http.StatusSeeOther)
 }
 
+// handlePairStart kicks off a pairing attempt and returns immediately; the QR
+// code and the outcome arrive over /events as pair_qr / pair_linked /
+// pair_error, the same channel every other live update already travels on.
+func (s *Server) handlePairStart(w http.ResponseWriter, r *http.Request) {
+	if s.startPairing == nil {
+		writeJSON(w, http.StatusServiceUnavailable,
+			map[string]string{"error": "pairing is not available"})
+		return
+	}
+	if err := s.startPairing(context.WithoutCancel(r.Context())); err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "pairing"})
+}
+
 // --- server-sent events -------------------------------------------------
 
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
@@ -632,6 +670,11 @@ func (s *Server) whatsAppState() string {
 		return ""
 	}
 	switch s.waState() {
+	case "":
+		// No device linked yet — the pairing button covers this state, and a
+		// badge reading "offline" next to it would describe a fault that
+		// doesn't exist on a machine that was never paired.
+		return ""
 	case "connected":
 		return s.loc.WhatsAppConnected
 	case "unpaired", "logged out":

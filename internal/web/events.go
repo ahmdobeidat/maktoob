@@ -10,13 +10,18 @@ import (
 // what to do with it. A note that arrives while the user is reading a different
 // note should not rewrite the page under them.
 type Event struct {
-	Kind   string `json:"kind"` // "arrived" | "updated"
+	Kind   string `json:"kind"` // "arrived" | "updated" | "pair_qr" | "pair_linked" | "pair_error"
 	NoteID string `json:"note_id"`
 	Status string `json:"status,omitempty"`
 	// Text is a short human sentence for the aria-live region. Screen reader
 	// users get the same notification sighted users get from the page changing,
 	// which is the whole reason the region exists.
 	Text string `json:"text,omitempty"`
+	// QR is a data: URI PNG, set only on a pair_qr event. It travels as a data
+	// URI rather than a separate image route because a QR code is single-use
+	// and short-lived — a route would need its own cache-busting and cleanup
+	// for an image nothing ever requests twice.
+	QR string `json:"qr,omitempty"`
 }
 
 const (
@@ -24,6 +29,14 @@ const (
 	KindArrived = "arrived"
 	// KindUpdated means a note reached a new state, usually a finished transcript.
 	KindUpdated = "updated"
+	// KindPairQR carries a fresh QR code to render while pairing is in progress.
+	// whatsmeow refreshes the code periodically, so more than one of these can
+	// arrive during a single pairing attempt.
+	KindPairQR = "pair_qr"
+	// KindPairLinked means pairing succeeded and WhatsApp is now connected.
+	KindPairLinked = "pair_linked"
+	// KindPairError means pairing failed or timed out; Text carries why.
+	KindPairError = "pair_error"
 )
 
 // subscriberBuffer is how many events a slow client may fall behind before it

@@ -1,0 +1,86 @@
+{
+  "chats": [
+    {
+      "id": "chat-family",
+      "name": "العيلة",
+      "notes": [
+        {
+          "sender": "أم أحمد",
+          "minutes_ago": 4,
+          "segments": [
+            {
+              "start_ms": 0,
+              "end_ms": 3200,
+              "text": "يا حبيبي شو أخبارك اليوم؟ اشتقتلك كثير",
+              "confidence": 0.96
+            },
+            {
+              "start_ms": 3200,
+              "end_ms": 7400,
+              "text": "لا تنسى تجيب الخبز وانت راجع عالبيت",
+              "confidence": 0.93
+            }
+          ]
+        },
+        {
+          "sender": "أم أحمد",
+          "minutes_ago": 41,
+          "segments": [
+            {
+              "start_ms": 0,
+              "end_ms": 2600,
+              "text": "بدنا نروح عند طبيب الأسنان بكرة",
+              "confidence": 0.22
+            },
+            {
+              "start_ms": 2600,
+              "end_ms": 6100,
+              "text": "الموعد الساعة عشرة الصبح تقريبا",
+              "edited": "الموعد الساعة عشرة ونص الصبح",
+              "confidence": 0.71
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "chat-work",
+      "name": "الشغل",
+      "notes": [
+        {
+          "sender": "زياد",
+          "minutes_ago": 130,
+          "segments": [
+            {
+              "start_ms": 0,
+              "end_ms": 4000,
+              "text": "الاجتماع انأجل لبكرة الساعة اثنين",
+              "confidence": 0.94
+            },
+            {
+              "start_ms": 4000,
+              "end_ms": 9000,
+              "text": "شكرا لمشاهدتكم لا تنسوا الاشتراك بالقناة",
+              "confidence": 0.97,
+              "suspect": true,
+              "no_speech_prob": 0.94
+            }
+          ]
+        },
+        {
+          "sender": "زياد",
+          "minutes_ago": 300,
+          "status": "no_speech",
+          "segments": []
+        },
+        {
+          "sender": "زياد",
+          "minutes_ago": 420,
+          "status": "failed",
+          "error": "media download failed: file no longer available",
+          "segments": []
+        }
+      ]
+    }
+  ]
+}

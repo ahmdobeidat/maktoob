@@ -27,8 +27,23 @@
       -->
       <p class="wa-state">{{.WAState}}</p>
     {{end}}
+    {{if .CanPair}}
+      <button type="button" id="pair-button" class="pair-button">Link WhatsApp</button>
+    {{end}}
   </div>
 </header>
+
+{{if .CanPair}}
+<div id="pair-panel" class="pair-panel" hidden>
+  <div class="pair-panel-body">
+    <button type="button" id="pair-close" class="pair-close" aria-label="Close">×</button>
+    <h2>Link WhatsApp</h2>
+    <p id="pair-status" role="status" aria-live="polite">Starting…</p>
+    <img id="pair-qr" alt="WhatsApp pairing QR code" hidden>
+    <p class="hint">Open WhatsApp on your phone → Settings → Linked Devices → Link a Device, then scan the code.</p>
+  </div>
+</div>
+{{end}}
 
 <!--
   Announcements land here. Screen reader users are told a note arrived or

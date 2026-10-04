@@ -37,3 +37,9 @@ Thumbs.db
 .env.*
 *.local
 !.env.example
+
+# Demo fixtures: real voice notes, a crypto salt and session/app databases.
+# The *.db rules above catch the databases but NOT the .ogg media or the salt,
+# and this repo is PUBLIC. Added 2026-10-04 after `git add -A` would have
+# committed 13 real recordings.
+/demo-data/

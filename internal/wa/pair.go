@@ -135,6 +135,47 @@ func Pair(ctx context.Context, client *whatsmeow.Client, out io.Writer) error {
 	return fmt.Errorf("pairing ended without linking")
 }
 
+// PairCode blocks until the user scans the code or ctx is cancelled, like Pair,
+// but reports each QR refresh through onCode instead of writing ASCII art to a
+// terminal. It exists for callers with a display that isn't a terminal — the
+// web pairing button renders onCode's payload as an image instead.
+//
+// onCode's error, if any, aborts the pairing attempt and is returned as-is:
+// a caller that fails to render one code is not going to render the next one
+// either.
+func PairCode(ctx context.Context, client *whatsmeow.Client, onCode func(code string) error) error {
+	if client.Store.ID != nil {
+		return fmt.Errorf("wa: a device is already linked; run: maktoob logout")
+	}
+
+	qrChan, err := client.GetQRChannel(ctx)
+	if err != nil {
+		return fmt.Errorf("start pairing: %w", err)
+	}
+	if err := client.Connect(); err != nil {
+		return fmt.Errorf("connect: %w", err)
+	}
+
+	for evt := range qrChan {
+		switch evt.Event {
+		case "code":
+			if err := onCode(evt.Code); err != nil {
+				return err
+			}
+		case "success":
+			return nil
+		case "timeout":
+			return fmt.Errorf("pairing timed out, try again")
+		default:
+			if evt.Error != nil {
+				return fmt.Errorf("pairing failed: %w", evt.Error)
+			}
+			return fmt.Errorf("pairing failed: %s", evt.Event)
+		}
+	}
+	return fmt.Errorf("pairing ended without linking")
+}
+
 // Logout unlinks the device and clears the session. Transcripts are untouched:
 // unlinking is not deleting, and conflating the two would destroy a user's data
 // on a command that does not sound like it should.

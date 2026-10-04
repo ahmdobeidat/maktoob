@@ -344,6 +344,62 @@
     scheduleRefresh();
   });
 
+  /* --- WhatsApp pairing -------------------------------------------------- */
+
+  var pairButton = document.getElementById("pair-button");
+  var pairPanel = document.getElementById("pair-panel");
+  var pairStatus = document.getElementById("pair-status");
+  var pairQR = document.getElementById("pair-qr");
+  var pairClose = document.getElementById("pair-close");
+
+  if (pairButton && pairPanel) {
+    pairButton.addEventListener("click", function () {
+      pairPanel.hidden = false;
+      pairQR.hidden = true;
+      pairStatus.textContent = "Starting…";
+      pairButton.disabled = true;
+
+      fetch("/pair/start", { method: "POST" })
+        .then(function (res) {
+          if (!res.ok) {
+            return res.json().catch(function () { return {}; }).then(function (body) {
+              throw new Error(body.error || "could not start pairing");
+            });
+          }
+        })
+        .catch(function (err) {
+          pairStatus.textContent = err.message || "Could not start pairing.";
+          pairButton.disabled = false;
+        });
+    });
+
+    pairClose.addEventListener("click", function () {
+      pairPanel.hidden = true;
+      pairButton.disabled = false;
+    });
+
+    source.addEventListener("pair_qr", function (ev) {
+      var data = parse(ev.data);
+      if (!data.qr) return;
+      pairQR.src = data.qr;
+      pairQR.hidden = false;
+      pairStatus.textContent = "Scan this code with WhatsApp.";
+    });
+
+    source.addEventListener("pair_linked", function (ev) {
+      pairQR.hidden = true;
+      pairStatus.textContent = "Linked. maktoob will transcribe voice notes that arrive from now on.";
+      window.setTimeout(function () { window.location.reload(); }, 1500);
+    });
+
+    source.addEventListener("pair_error", function (ev) {
+      var data = parse(ev.data);
+      pairQR.hidden = true;
+      pairStatus.textContent = data.text || "Pairing failed.";
+      pairButton.disabled = false;
+    });
+  }
+
   function parse(raw) {
     try { return JSON.parse(raw) || {}; } catch (e) { return {}; }
   }

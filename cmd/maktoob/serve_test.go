@@ -141,23 +141,28 @@ func TestSleepReportsCancellation(t *testing.T) {
 // rather than reading "disconnected", which on a machine that was never meant
 // to be linked looks like a fault the user needs to fix.
 func TestAbsentWhatsAppReportsNoState(t *testing.T) {
-	var h *whatsAppHandle
-	if h.stateFunc() != nil {
-		t.Error("a nil handle offered a state reporter")
+	// A handle that has never been attached to a linked client — the
+	// no-session-on-disk, pairing-button-not-pressed-yet case — reports an
+	// empty state so the header badge stays absent rather than showing a
+	// permanent "disconnected".
+	h := &whatsAppHandle{}
+	if got := h.stateFunc()(); got != "" {
+		t.Errorf("state = %q, want empty for an unlinked handle", got)
 	}
-	// And Close on a nil handle must not panic, because the deferred Close in
-	// cmdServe runs whether or not startWhatsApp succeeded.
+	if !h.canPair() {
+		t.Error("an unlinked handle should offer pairing")
+	}
+	// And Close on an unattached handle must not panic, because the deferred
+	// Close in cmdServe runs whether or not startWhatsApp succeeded.
 	h.Close()
 }
 
 func TestWhatsAppStateIsReportedAsItChanges(t *testing.T) {
 	h := &whatsAppHandle{}
+	h.linked.Store(true)
 	h.state.Store("disconnected")
 
 	report := h.stateFunc()
-	if report == nil {
-		t.Fatal("a live handle offered no state reporter")
-	}
 	if got := report(); got != "disconnected" {
 		t.Errorf("state = %q, want disconnected", got)
 	}
@@ -165,6 +170,9 @@ func TestWhatsAppStateIsReportedAsItChanges(t *testing.T) {
 	h.state.Store("connected")
 	if got := report(); got != "connected" {
 		t.Errorf("state = %q after reconnect, want connected", got)
+	}
+	if h.canPair() {
+		t.Error("a linked handle should not offer pairing")
 	}
 }
 
